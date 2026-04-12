@@ -183,30 +183,36 @@ def data_file(username):
 def misc_file(username):
     return f"misc_{safe_username(username)}.json"
 
-def user_exists(username):
-    return os.path.exists(data_file(username))
+def ensure_user_exists(username):
+    result = supabase.table("users").select("*").eq("username", username).execute()
+    if not result.data:
+        supabase.table("users").insert({
+            "username": username,
+            "items": [],
+            "misc": []
+        }).execute()
+
 
 def load_items(username):
-    f = data_file(username)
-    if os.path.exists(f):
-        with open(f) as fh:
-            return json.load(fh)
+    result = supabase.table("users").select("items").eq("username", username).execute()
+    if result.data:
+        return result.data[0].get("items", [])
     return []
+
 
 def save_items(username, items):
-    with open(data_file(username), "w") as fh:
-        json.dump(items, fh)
+    supabase.table("users").update({"items": items}).eq("username", username).execute()
 
 def load_misc(username):
-    f = misc_file(username)
-    if os.path.exists(f):
-        with open(f) as fh:
-            return json.load(fh)
+    result = supabase.table("users").select("misc").eq("username", username).execute()
+    if result.data:
+        return result.data[0].get("misc", [])
     return []
 
+
 def save_misc(username, items):
-    with open(misc_file(username), "w") as fh:
-        json.dump(items, fh)
+    supabase.table("users").update({"misc": items}).eq("username", username).execute()
+
 
 def upload_photo(username, file):
     u = safe_username(username)
@@ -350,11 +356,12 @@ def login():
         if action == "login":
             if not username:
                 error = "Please enter a username."
-            elif user_exists(username):
-                session["username"] = username
-                return redirect("/")
+
+        
             else:
-                confirm_user = username
+                session["username"] = username
+                ensure_user_exists(username)
+                return redirect("/")
                 
         elif action == "create":
             username = request.form.get("confirm_username", "").strip()
