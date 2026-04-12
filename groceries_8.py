@@ -39,15 +39,15 @@ def flybuys_file(username):
     return f"rewards_{safe_username(username)}.json"
 
 def load_flybuys(username):
-    f = flybuys_file(username)
-    if os.path.exists(f):
-        with open(f) as fh:
-            return json.load(fh)
-    return None
+    result = supabase.table("users").select("flybuys").eq("username", username).execute()
+    if result.data:
+        return result.data[0].get("flybuys", "")
+    return ""
+
 
 def save_flybuys(username, number):
-    with open(flybuys_file(username), "w") as fh:
-        json.dump({"number": number}, fh)
+    supabase.table("users").update({"flybuys": number}).eq("username", username).execute()
+
 
 def format_flybuys_display(number):
     # Format raw digits nicely e.g. 27932023822170 -> 2793 2023 8221 70
@@ -57,13 +57,12 @@ def format_flybuys_display(number):
 
 def get_flybuys_card_html(username, css_vars=True):
     """Returns flybuys card HTML, or an 'add card' prompt if not set."""
-    data = load_flybuys(username)
+    number = load_flybuys(username)
     border = "var(--border)" if css_vars else "#e8e0d4"
     radius = "var(--radius)" if css_vars else "14px"
     muted = "var(--muted)" if css_vars else "#8a8070"
 
-    if data and data["number"]:
-        number = data["number"]
+    if number:
         display = format_flybuys_display(number)
         try:
             barcode_b64 = generate_barcode_b64(number)
@@ -440,7 +439,8 @@ def logout():
 @app.route("/flybuys/edit", methods=["GET", "POST"])
 def flybuys_edit():
     redir = require_user()
-    if redir: return redir
+    if redir: 
+        return redir
     username = current_user()
     error = ""
 
@@ -460,10 +460,12 @@ def flybuys_edit():
             except:
                 error = "Could not generate a barcode for that number. Please check and try again."
 
-    existing = load_flybuys(username)
-    current_val = existing["number"] if existing else ""
-    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
-
+    current_val = load_flybuys(username) or ""
+    error_html = (
+        f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
+        if error else ""
+    )
+    
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><title>Rewards — {username}</title>{BASE_HEAD}</head>
