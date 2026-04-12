@@ -10,7 +10,7 @@ from supabase import create_client, Client
 
 app = Flask(__name__)
 app.secret_key = "tacobell"
-app.config['MAX_CONTENT_LENGTH'] = 2* 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 8* 1024 * 1024
 MAX_ITEMS = 200
 UPLOAD_FOLDER = "static/uploads/"
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -218,12 +218,22 @@ def upload_photo(username, file):
     u = safe_username(username)
     filename = f"{u}/{file.filename}"
 
-    file_bytes = file.read()
+    img = Image.open(file)
+
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+        filename = f"{u}/{os.path.splitext(file.filename)[0]}.jpg"
+
+    img.thumbnail((800,800))
+
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="JPEG", optimize=True, quality =75)
+    img_bytes.seek(0)
 
     supabase.storage.from_("item-photos").upload(
         path=filename,
-        file=file_bytes,
-        file_options={"content-type": file.content_type}
+        file=img_bytes.read(),
+        file_options={"content-type": "image/jpeg"}
     )
 
     return filename
