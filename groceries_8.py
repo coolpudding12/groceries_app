@@ -748,7 +748,11 @@ def shop():
         for item in cat_items:
             img_html = ""
             if item.get("photo"):
-                img_html = f'<img src="/static/uploads/{safe_username(username)}/{item["photo"]}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;margin-right:12px;flex-shrink:0;">'
+                try:
+                    url = get_photo_url(item["photo"])
+                    img_html = f'<img src="{url}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;margin-right:12px;flex-shrink:0;">'
+                except:
+                    img_html = ""
             checked_attr = "checked" if item.get("checked") else ""
             rows += f"""
             <li class="shop-item" style="background:var(--card);border:2px solid var(--border);border-radius:12px;
