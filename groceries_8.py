@@ -525,7 +525,8 @@ def home():
     for i, item in enumerate(items):
         img_html = ""
         if item.get("photo"):
-            img_html = f'<img src="/static/uploads/{safe_username(username)}/{item["photo"]}" style="width:52px;height:52px;object-fit:cover;border-radius:10px;margin-right:12px;flex-shrink:0;">'
+            url = get_photo_url(item["photo"])
+            img_html = f'<img src="{url}" style="width:52px;height:52px;object-fit:cover;border-radius:10px;margin-right:12px;flex-shrink:0;">'
         dupe_badge = ""
         dupe_border = ""
         if i in duplicates:
@@ -989,7 +990,7 @@ def clear():
             # Delete photo if it has one
             if item.get("photo"):
                 try:
-                    os.remove(os.path.join(folder, item["photo"]))
+                    supabase.storage.from_("item-photos").remove([item["photo"]])
                 except:
                     pass
         else:
@@ -1042,12 +1043,8 @@ def export():
             img_html = ""
             if item.get("photo"):
                 try:
-                    img_path = os.path.join(get_upload_folder(username), item["photo"])
-                    with open(img_path, "rb") as f:
-                        img_data = base64.b64encode(f.read()).decode()
-                    ext = item["photo"].split(".")[-1].lower()
-                    mime = "image/jpeg" if ext in ["jpg","jpeg"] else f"image/{ext}"
-                    img_html = f'<img src="data:{mime};base64,{img_data}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;margin-right:12px;flex-shrink:0;">'
+                    url = get_photo_url(item["photo"])
+                    img_html = f'<img src="{url}" style="width:52px;height:52px;object-fit:cover;border-radius:10px;margin-right:12px;flex-shrink:0;">'
                 except:
                     pass
             rows += f"""
