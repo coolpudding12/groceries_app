@@ -348,7 +348,9 @@ BASE_HEAD = """
 def login():
     error = ""
     confirm_user = ""
-    username = request.form.get("username", "").strip()
+    
+    raw_username = request.form.get("username", "").strip()
+    username = safe_username(raw_username)
     
     if request.method == "POST":
         action = request.form.get("action")
@@ -356,22 +358,25 @@ def login():
         if action == "login":
             if not username:
                 error = "Please enter a username."
+            elif user_exists(username):
+                session["username"] = username
+                return redirect("/")
 
         
             else:
-                session["username"] = username
-                ensure_user_exists(username)
-                return redirect("/")
+                confirm_user = username
                 
         elif action == "create":
-            username = request.form.get("confirm_username", "").strip()
+            raw_confirm = request.form.get("confirm_username", "").strip()
+            username = safe_username(raw_confirm)
+
             if len(username) > 18:
                 error = "Username must be 18 characters or less."
             else:
-                save_items(username, [])
+                ensure_user_exists(username)
                 session["username"] = username
                 return redirect("/")
-
+    
     confirm_html = ""
     if confirm_user:
         confirm_html = f"""
