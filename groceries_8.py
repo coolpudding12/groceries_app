@@ -176,12 +176,6 @@ CATEGORIES = {
 def safe_username(username):
     return "".join(c for c in username.lower() if c.isalnum() or c in "-_").strip()
 
-def data_file(username):
-    return f"groceries_{safe_username(username)}.json"
-
-def misc_file(username):
-    return f"misc_{safe_username(username)}.json"
-
 def ensure_user_exists(username):
     result = supabase.table("users").select("*").eq("username", username).execute()
     if not result.data:
@@ -191,13 +185,21 @@ def ensure_user_exists(username):
             "misc": []
         }).execute()
 
+def user_exists(username):
+    result = supabase.table("users").select("id").eq("username", username).execute()
+    return bool(result.data)
+
+def data_file(username):
+    return f"groceries_{safe_username(username)}.json"
+
+def misc_file(username):
+    return f"misc_{safe_username(username)}.json"
 
 def load_items(username):
     result = supabase.table("users").select("items").eq("username", username).execute()
     if result.data:
         return result.data[0].get("items", [])
     return []
-
 
 def save_items(username, items):
     supabase.table("users").update({"items": items}).eq("username", username).execute()
@@ -211,7 +213,6 @@ def load_misc(username):
 
 def save_misc(username, items):
     supabase.table("users").update({"misc": items}).eq("username", username).execute()
-
 
 def upload_photo(username, file):
     u = safe_username(username)
@@ -383,7 +384,7 @@ def login():
           <p style="font-size:16px;font-weight:600;margin-bottom:16px;">No list found for <strong>{confirm_user}</strong>. Create one?</p>
           <form method="post" action="/login" style="display:flex;gap:10px;justify-content:center;">
             <input type="hidden" name="action" value="create">
-            <input type="hidden" name="confirm_username" value="{confirm_user}">
+            <input type="hidden" name="confirm_username" value="{raw_username}">
             <button type="submit"
               style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
                      font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
@@ -465,7 +466,7 @@ def flybuys_edit():
         f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
         if error else ""
     )
-    
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><title>Rewards — {username}</title>{BASE_HEAD}</head>
