@@ -718,7 +718,7 @@ def shop():
     redir = require_user()
     if redir: return redir
     username = current_user()
-    display_name = current_display_name
+    display_name = current_display_name()
     items = load_items(username)
     categories = categorise_items(items)
 
