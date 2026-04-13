@@ -594,49 +594,34 @@ def login():
             if use_pin and pin:
                 parts = pin.split("-")
                 pin_display = f"{parts[0]}  ·  {parts[1]}" if len(parts) == 2 else pin
-            error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""    
-            return f"""<!DOCTYPE html>
+    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
+
+    return f"""<!DOCTYPE html>
 <html lang="en">
-<head><title>Welcome!</title>{BASE_HEAD}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-</head>
+<head><title>Grocery List</title>{BASE_HEAD}</head>
 <body>
-<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;gap:20px;">
-  <h1 style="margin-bottom:0;">🛒 You're all set!</h1>
-  <p style="color:var(--muted);font-size:15px;margin-bottom:8px;">Save your login card so you don't forget</p>
-  <div id="login-card" style="background:#fff8f0;border:2px solid #e8d5b0;border-radius:20px;padding:32px 40px;text-align:center;width:300px;font-family:'DM Sans',sans-serif;">
-    <p style="font-size:13px;color:#aaa;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase;">Grocery List</p>
-    <p style="font-size:13px;color:#aaa;margin-bottom:4px;">grocerylist.devkeo.com</p>
-    <div style="border-top:1px solid #e8d5b0;margin:16px 0;"></div>
-    <p style="font-size:13px;color:#aaa;margin-bottom:4px;">Username</p>
-    <p style="font-size:26px;font-weight:700;color:#3a7d44;margin-bottom:16px;">{raw_username}</p>
-    {'<div style="border-top:1px solid #e8d5b0;margin:16px 0;"></div><p style="font-size:13px;color:#aaa;margin-bottom:4px;">PIN</p><p style="font-size:32px;font-weight:700;letter-spacing:8px;color:#333;">' + pin_display + '</p>' if use_pin and pin else '<div style="border-top:1px solid #e8d5b0;margin:16px 0;"></div><p style="font-size:13px;color:#aaa;">No PIN set</p>'}
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your username to continue</p>
+  <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+              padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+    <form method="post">
+      <input type="hidden" name="stage" value="username">
+      <input type="text" name="username" placeholder="Your username..." autofocus
+        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+               border:2px solid var(--border);border-radius:10px;background:var(--cream);
+               color:var(--text);outline:none;margin-bottom:12px;"
+        onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'">
+      {error_html}
+      <button type="submit"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+               box-shadow:0 4px 12px rgba(58,125,68,0.3);margin-top:4px;">
+        Continue →
+      </button>
+    </form>
   </div>
-  <button onclick="downloadCard()"
-    style="padding:12px 28px;background:var(--green);color:white;border:none;border-radius:12px;
-           font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
-    Download Card
-  </button>
-  <a href="/"
-    style="padding:12px 28px;background:#f0ece4;color:var(--text);border-radius:12px;
-           font-family:'Righteous',sans-serif;font-size:16px;text-decoration:none;">
-    Go to my list →
-  </a>
 </div>
-<script>
-function downloadCard() {{
-  const card = document.getElementById('login-card');
-  html2canvas(card, {{
-    backgroundColor: '#fff8f0',
-    scale: 2
-  }}).then(canvas => {{
-    const link = document.createElement('a');
-    link.download = '{raw_username}-grocery-login.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  }});
-}}
-</script>
 </body></html>"""
 
 @app.route("/logout")
