@@ -377,7 +377,7 @@ def login():
                 error = "Please enter a username."
             elif user_exists(username):
                 session["username"] = username
-                session["display_name"] = raw_confirm
+                session["display_name"] = raw_username
                 return redirect("/")
 
         
@@ -393,7 +393,7 @@ def login():
             else:
                 ensure_user_exists(username)
                 session["username"] = username
-                session["display_name"] = raw_username
+                session["display_name"] = raw_confirm
                 return redirect("/")
     
     confirm_html = ""
