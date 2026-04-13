@@ -401,11 +401,10 @@ def login():
         elif action == "create":
             raw_confirm = request.form.get("confirm_username", "").strip()
             username = safe_username(raw_confirm)
-            pin = request.form.get("pin", "")
+            use_pin = request.form.get("use_pin") == "yes"
+            pin = request.form.get("pin", "") if use_pin else None
             if len(username) > 18:
                 error = "Username must be 18 characters or less."
-            elif not pin or len(pin) < 2:
-                error = "Please set your PIN sliders."
             else:
                 ensure_user_exists(username, pin=pin)
                 session.permanent = True
@@ -413,32 +412,78 @@ def login():
                 session["display_name"] = raw_confirm
                 return redirect("/")
 
-    slider_html = """
-    <div style="margin:16px 0;">
-        <label style="font-size:14px;color:var(--muted);display:block;margin-bottom:8px;">Set your PIN</label>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-            <span style="font-size:13px;color:var(--muted);width:60px;">Slider 1</span>
-            <input type="range" min="1" max="10" value="5" id="slider1" 
-                oninput="updatePin()"
-                style="flex:1;">
-            <span id="val1" style="font-size:18px;font-weight:700;width:24px;text-align:center;">5</span>
+    # Sliders for login (existing user with pin)
+    login_slider_html = """
+    <div id="pin-section" style="margin:16px 0;">
+        <p style="font-size:14px;color:var(--muted);margin-bottom:12px;">Enter your PIN</p>
+        <div style="display:flex;align-items:center;gap:16px;justify-content:center;margin-bottom:16px;">
+            <div style="text-align:center;">
+                <span id="login-val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
+                <input type="range" min="0" max="20" value="0" id="login-slider1"
+                    oninput="updateLoginPin()"
+                    style="width:120px;margin-top:8px;">
+            </div>
+            <span style="font-size:28px;font-weight:300;color:var(--muted);">·</span>
+            <div style="text-align:center;">
+                <span id="login-val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
+                <input type="range" min="0" max="20" value="0" id="login-slider2"
+                    oninput="updateLoginPin()"
+                    style="width:120px;margin-top:8px;">
+            </div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;">
-            <span style="font-size:13px;color:var(--muted);width:60px;">Slider 2</span>
-            <input type="range" min="1" max="10" value="5" id="slider2" 
-                oninput="updatePin()"
-                style="flex:1;">
-            <span id="val2" style="font-size:18px;font-weight:700;width:24px;text-align:center;">5</span>
-        </div>
-        <input type="hidden" name="pin" id="pin" value="55">
+        <input type="hidden" name="pin" id="login-pin" value="">
     </div>
     <script>
-        function updatePin() {
-            const v1 = document.getElementById('slider1').value;
-            const v2 = document.getElementById('slider2').value;
-            document.getElementById('val1').textContent = v1;
-            document.getElementById('val2').textContent = v2;
-            document.getElementById('pin').value = v1 + v2;
+        function updateLoginPin() {
+            const v1 = document.getElementById('login-slider1').value;
+            const v2 = document.getElementById('login-slider2').value;
+            document.getElementById('login-val1').textContent = v1;
+            document.getElementById('login-val2').textContent = v2;
+            document.getElementById('login-pin').value = v1 + '-' + v2;
+        }
+    </script>
+    """
+
+    # Sliders for create (new user optional pin)
+    create_slider_html = """
+    <div style="margin:16px 0;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:15px;font-weight:600;margin-bottom:12px;">
+            <input type="checkbox" id="pin-toggle" name="use_pin" value="yes"
+                onchange="togglePinSliders()"
+                style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;">
+            Keep it private — create a PIN
+        </label>
+        <div id="create-pin-section" style="display:none;margin-top:12px;">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:12px;text-align:center;">Set your 2-number PIN</p>
+            <div style="display:flex;align-items:center;gap:16px;justify-content:center;margin-bottom:8px;">
+                <div style="text-align:center;">
+                    <span id="create-val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
+                    <input type="range" min="0" max="20" value="0" id="create-slider1"
+                        oninput="updateCreatePin()"
+                        style="width:120px;margin-top:8px;">
+                </div>
+                <span style="font-size:28px;font-weight:300;color:var(--muted);">·</span>
+                <div style="text-align:center;">
+                    <span id="create-val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
+                    <input type="range" min="0" max="20" value="0" id="create-slider2"
+                        oninput="updateCreatePin()"
+                        style="width:120px;margin-top:8px;">
+                </div>
+            </div>
+            <input type="hidden" name="pin" id="create-pin" value="">
+        </div>
+    </div>
+    <script>
+        function togglePinSliders() {
+            const section = document.getElementById('create-pin-section');
+            section.style.display = document.getElementById('pin-toggle').checked ? 'block' : 'none';
+        }
+        function updateCreatePin() {
+            const v1 = document.getElementById('create-slider1').value;
+            const v2 = document.getElementById('create-slider2').value;
+            document.getElementById('create-val1').textContent = v1;
+            document.getElementById('create-val2').textContent = v2;
+            document.getElementById('create-pin').value = v1 + '-' + v2;
         }
     </script>
     """
@@ -451,7 +496,7 @@ def login():
           <form method="post" action="/login" style="display:flex;flex-direction:column;gap:10px;align-items:center;">
             <input type="hidden" name="action" value="create">
             <input type="hidden" name="confirm_username" value="{confirm_user}">
-            {slider_html}
+            {create_slider_html}
             <div style="display:flex;gap:10px;">
                 <button type="submit"
                   style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
@@ -486,7 +531,7 @@ def login():
                color:var(--text);outline:none;margin-bottom:12px;"
         onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
         value="{confirm_user}">
-      {slider_html}
+      {login_slider_html}
       {error_html}
       <button type="submit"
         style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
