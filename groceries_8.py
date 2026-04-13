@@ -5,7 +5,8 @@ import barcode
 from barcode.writer import ImageWriter
 import json, os, io, base64
 from supabase import create_client, Client
-
+from datetime import timedelta
+import hashlib
 
 
 app = Flask(__name__)
@@ -15,6 +16,7 @@ MAX_ITEMS = 200
 UPLOAD_FOLDER = "static/uploads/"
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 os.makedirs(DATA_DIR, exist_ok=True)
+app.permanent_session_lifetime = timedelta(days=365)
 
 from supabase import create_client, Client
 
@@ -176,14 +178,23 @@ CATEGORIES = {
 def safe_username(username):
     return "".join(c for c in username.lower() if c.isalnum() or c in "-_.").strip()
 
-def ensure_user_exists(username):
+def ensure_user_exists(username, pin=None):
     result = supabase.table("users").select("*").eq("username", username).execute()
     if not result.data:
         supabase.table("users").insert({
             "username": username,
             "items": [],
-            "misc": []
+            "misc": [],
+            "pin": hashlib.sha256(pin.encode()).hexdigest() if pin else None
         }).execute()
+def check_pin(username, pin):
+    result = supabase.table("users").select("pin").eq("username", username).execute()
+    if not result.data:
+        return False
+    stored_pin = result.data [0].get("pin")
+    if not stored_pin:
+        return True
+    return stored_pin == hashlib.sha256(pin.encode()).hexdigest()
 
 def user_exists(username):
     result = supabase.table("users").select("id").eq("username", username).execute()
@@ -289,7 +300,7 @@ def categorise_items(items):
 
 def strip_quantity(name):
     import re
-    return re.sub(r'\s*[xX]\s*\d+\s*$', '', name).strip()
+    return re.sub(r'\s*[xX]?\s*\d+\s*$', '', name).strip()
 
 def find_duplicates(items):
     items = [item for item in items if isinstance(item, dict) and "name" in item]
@@ -365,55 +376,94 @@ BASE_HEAD = """
 def login():
     error = ""
     confirm_user = ""
-    
+
     raw_username = request.form.get("username", "").strip()
     username = safe_username(raw_username)
-    
+
     if request.method == "POST":
         action = request.form.get("action")
-        
+
         if action == "login":
             if not username:
                 error = "Please enter a username."
             elif user_exists(username):
-                session["username"] = username
-                session["display_name"] = raw_username
-                return redirect("/")
-
-        
+                pin = request.form.get("pin", "")
+                if check_pin(username, pin):
+                    session.permanent = True
+                    session["username"] = username
+                    session["display_name"] = raw_username
+                    return redirect("/")
+                else:
+                    error = "Incorrect PIN. Try again."
             else:
                 confirm_user = raw_username
-                
+
         elif action == "create":
             raw_confirm = request.form.get("confirm_username", "").strip()
             username = safe_username(raw_confirm)
-
+            pin = request.form.get("pin", "")
             if len(username) > 18:
                 error = "Username must be 18 characters or less."
+            elif not pin or len(pin) < 2:
+                error = "Please set your PIN sliders."
             else:
-                ensure_user_exists(username)
+                ensure_user_exists(username, pin=pin)
+                session.permanent = True
                 session["username"] = username
                 session["display_name"] = raw_confirm
                 return redirect("/")
-    
+
+    slider_html = """
+    <div style="margin:16px 0;">
+        <label style="font-size:14px;color:var(--muted);display:block;margin-bottom:8px;">Set your PIN</label>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+            <span style="font-size:13px;color:var(--muted);width:60px;">Slider 1</span>
+            <input type="range" min="1" max="10" value="5" id="slider1" 
+                oninput="updatePin()"
+                style="flex:1;">
+            <span id="val1" style="font-size:18px;font-weight:700;width:24px;text-align:center;">5</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;color:var(--muted);width:60px;">Slider 2</span>
+            <input type="range" min="1" max="10" value="5" id="slider2" 
+                oninput="updatePin()"
+                style="flex:1;">
+            <span id="val2" style="font-size:18px;font-weight:700;width:24px;text-align:center;">5</span>
+        </div>
+        <input type="hidden" name="pin" id="pin" value="55">
+    </div>
+    <script>
+        function updatePin() {
+            const v1 = document.getElementById('slider1').value;
+            const v2 = document.getElementById('slider2').value;
+            document.getElementById('val1').textContent = v1;
+            document.getElementById('val2').textContent = v2;
+            document.getElementById('pin').value = v1 + v2;
+        }
+    </script>
+    """
+
     confirm_html = ""
     if confirm_user:
         confirm_html = f"""
         <div style="background:#fff8f0;border:2px solid #f0d9c0;border-radius:var(--radius);padding:20px;margin-top:16px;text-align:center;">
           <p style="font-size:16px;font-weight:600;margin-bottom:16px;">No list found for <strong>{confirm_user}</strong>. Create one?</p>
-          <form method="post" action="/login" style="display:flex;gap:10px;justify-content:center;">
+          <form method="post" action="/login" style="display:flex;flex-direction:column;gap:10px;align-items:center;">
             <input type="hidden" name="action" value="create">
             <input type="hidden" name="confirm_username" value="{confirm_user}">
-            <button type="submit"
-              style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
-                     font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
-              Yes, create it
-            </button>
-            <a href="/login"
-              style="padding:12px 24px;background:#f0ece4;color:var(--text);border-radius:10px;
-                     font-family:'Righteous',sans-serif;font-size:16px;display:inline-block;">
-              Cancel
-            </a>
+            {slider_html}
+            <div style="display:flex;gap:10px;">
+                <button type="submit"
+                  style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
+                         font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
+                  Yes, create it
+                </button>
+                <a href="/login"
+                  style="padding:12px 24px;background:#f0ece4;color:var(--text);border-radius:10px;
+                         font-family:'Righteous',sans-serif;font-size:16px;display:inline-block;">
+                  Cancel
+                </a>
+            </div>
           </form>
         </div>"""
 
@@ -426,7 +476,6 @@ def login():
 <div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
   <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
   <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your username to continue</p>
-
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
     <form method="post">
@@ -437,6 +486,7 @@ def login():
                color:var(--text);outline:none;margin-bottom:12px;"
         onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
         value="{confirm_user}">
+      {slider_html}
       {error_html}
       <button type="submit"
         style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
@@ -446,7 +496,6 @@ def login():
       </button>
     </form>
   </div>
-
   {confirm_html}
 </div>
 </body></html>"""
