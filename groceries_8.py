@@ -645,11 +645,6 @@ def logout():
     session.pop("username", None)
     return redirect("/login")
 
-@app.route("/logout")
-def logout():
-    session.pop("username", None)
-    return redirect("/login")
-
 @app.route("/flybuys/edit", methods=["GET", "POST"])
 def flybuys_edit():
     redir = require_user()
