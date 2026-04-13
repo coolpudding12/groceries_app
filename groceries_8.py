@@ -249,7 +249,10 @@ def get_upload_folder(username):
 
 def current_user():
     return session.get("username", None)
-
+    
+def current_display_name():
+    return session.get("display_name") or session.get("username")
+    
 def require_user():
     user = current_user()
     if not user:
