@@ -174,7 +174,7 @@ CATEGORIES = {
 # --- Data helpers (per user) ---
 
 def safe_username(username):
-    return "".join(c for c in username.lower() if c.isalnum() or c in "-_").strip()
+    return "".join(c for c in username.lower() if c.isalnum() or c in "-_.").strip()
 
 def ensure_user_exists(username):
     result = supabase.table("users").select("*").eq("username", username).execute()
@@ -377,7 +377,7 @@ def login():
                 error = "Please enter a username."
             elif user_exists(username):
                 session["username"] = username
-                session["display_name"] = raw_username
+                session["display_name"] = raw_confirm
                 return redirect("/")
 
         
