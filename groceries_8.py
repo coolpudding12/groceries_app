@@ -262,7 +262,7 @@ def categorise_items(items):
     items = [item for item in items if isinstance(item, dict) and "name" in item]
     result = {cat: [] for cat in CATEGORIES}
     result["Other"] = []
-    pantry_override = ["tea", "can of", "cans of", "tin of", "tins of", "loose leaf tea"]
+    pantry_override = ["tea", "can of", "cans of", "tin of", "tins of", "loose leaf tea", "soup", "oil"]
     
     for item in items:
         name_lower = item["name"].lower()
@@ -284,10 +284,14 @@ def categorise_items(items):
             result["Other"].append(item)
     return {cat: itms for cat, itms in result.items() if itms}
 
+def strip_quantity(name):
+    import re
+    return re.sub(r'\s*[xX]\s*\d+\s*$', '', name).strip()
+
 def find_duplicates(items):
     items = [item for item in items if isinstance(item, dict) and "name" in item]
     duplicates = set()
-    names = [item["name"].lower().strip() for item in items]
+    names = [strip_quantity(item["name"].lower().strip()) for item in items]
     for i in range(len(names)):
         for j in range(len(names)):
             if i == j:
@@ -370,11 +374,12 @@ def login():
                 error = "Please enter a username."
             elif user_exists(username):
                 session["username"] = username
+                session["display_name"] = raw_username
                 return redirect("/")
 
         
             else:
-                confirm_user = username
+                confirm_user = raw_username
                 
         elif action == "create":
             raw_confirm = request.form.get("confirm_username", "").strip()
@@ -385,6 +390,7 @@ def login():
             else:
                 ensure_user_exists(username)
                 session["username"] = username
+                session["display_name"] = raw_username
                 return redirect("/")
     
     confirm_html = ""
@@ -394,7 +400,7 @@ def login():
           <p style="font-size:16px;font-weight:600;margin-bottom:16px;">No list found for <strong>{confirm_user}</strong>. Create one?</p>
           <form method="post" action="/login" style="display:flex;gap:10px;justify-content:center;">
             <input type="hidden" name="action" value="create">
-            <input type="hidden" name="confirm_username" value="{raw_username}">
+            <input type="hidden" name="confirm_username" value="{confirm_user}">
             <button type="submit"
               style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
                      font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
@@ -587,11 +593,11 @@ def home():
     misc_count = f'<span style="background:#ff4444;color:white;border-radius:50%;width:18px;height:18px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;margin-left:6px;">{len(misc_items)}</span>' if misc_items else ""
 
     # Only show Flybuys for the owner
-
+display_name = current_display_name()
 
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><title>{username}'s Grocery List</title>{BASE_HEAD}</head>
+<head><title>{display_name}'s Grocery List</title>{BASE_HEAD}</head>
 <body>
 <div class="page">
 
@@ -599,10 +605,10 @@ def home():
     <h1 style="
         display:flex;
         align-items:center;
-        gap:{'6px' if len(username) <= 10 else '1px'};margin:0;">
-    <span style="font-size:{'32px' if len(username) <= 10 else '20px'};">🛒</span>
-    <span style="font-size:{'32px' if len(username) <= 10 else '20px'};">
-    {username}
+        gap:{'6px' if len(display_name) <= 10 else '1px'};margin:0;">
+    <span style="font-size:{'32px' if len(display_name) <= 10 else '20px'};">🛒</span>
+    <span style="font-size:{'32px' if len(display_name) <= 10 else '20px'};">
+    {display_name}
     <span>
     </h1>
     <div style="display:flex;gap:8px;">
@@ -712,6 +718,7 @@ def shop():
     redir = require_user()
     if redir: return redir
     username = current_user()
+    display_name = current_display_name
     items = load_items(username)
     categories = categorise_items(items)
 
@@ -780,7 +787,7 @@ def shop():
 
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><title>Shopping — {username}</title>{BASE_HEAD}
+<head><title>Shopping — {display_name}</title>{BASE_HEAD}
 <style>
   .shop-item.done {{ opacity:0.4; }}
   .shop-item.done span {{ text-decoration:line-through; }}
@@ -796,7 +803,7 @@ def shop():
 </head>
 <body>
 <div class="page">
-  <h1>🛒 {username}</h1>
+  <h1>🛒 {display_name}</h1>
 
   {flybuys_html}
 
@@ -897,6 +904,11 @@ def delete(index):
     if 0 <= index < len(items):
         removed = items.pop(index)
         session["last_deleted"] = {"item": removed, "index": index}
+        if removed.get("photo"):
+            try:
+                supabase.storage.from_("item-photos").remove([removed["photo"]])
+            except:
+                pass
         save_items(username, items)
     return redirect("/")
 
@@ -987,11 +999,8 @@ def clear():
 
     items = load_items(username)
     remaining = []
-    folder = get_upload_folder(username)
-
     for item in items:
         if item["name"] in ticked:
-            # Delete photo if it has one
             if item.get("photo"):
                 try:
                     supabase.storage.from_("item-photos").remove([item["photo"]])
