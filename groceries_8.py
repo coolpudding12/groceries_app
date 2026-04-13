@@ -594,7 +594,7 @@ def login():
             if use_pin and pin:
                 parts = pin.split("-")
                 pin_display = f"{parts[0]}  ·  {parts[1]}" if len(parts) == 2 else pin
-
+            error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""    
             return f"""<!DOCTYPE html>
 <html lang="en">
 <head><title>Welcome!</title>{BASE_HEAD}
