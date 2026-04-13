@@ -593,7 +593,7 @@ def home():
     misc_count = f'<span style="background:#ff4444;color:white;border-radius:50%;width:18px;height:18px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;margin-left:6px;">{len(misc_items)}</span>' if misc_items else ""
 
     # Only show Flybuys for the owner
-display_name = current_display_name()
+    display_name = current_display_name()
 
     return f"""<!DOCTYPE html>
 <html lang="en">
