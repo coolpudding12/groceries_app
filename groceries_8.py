@@ -375,164 +375,201 @@ BASE_HEAD = """
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
-    confirm_user = ""
-
+    stage = request.form.get("stage", "username")
     raw_username = request.form.get("username", "").strip()
     username = safe_username(raw_username)
 
     if request.method == "POST":
-        action = request.form.get("action")
 
-        if action == "login":
+        # Stage 1 — username submitted
+        if stage == "username":
             if not username:
                 error = "Please enter a username."
             elif user_exists(username):
-                pin = request.form.get("pin", "")
-                if check_pin(username, pin):
+                # Check if they have a pin
+                result = supabase.table("users").select("pin").eq("username", username).execute()
+                has_pin = result.data and result.data[0].get("pin")
+                if has_pin:
+                    # Show pin entry
+                    return f"""<!DOCTYPE html>
+<html lang="en"><head><title>Grocery List</title>{BASE_HEAD}</head>
+<body>
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your PIN to continue</p>
+  <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+              padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+    <form method="post">
+      <input type="hidden" name="stage" value="pin">
+      <input type="hidden" name="username" value="{raw_username}">
+      <div style="margin:16px 0;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <span id="val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;min-width:40px;text-align:center;">__</span>
+          <input type="range" min="0" max="20" value="0" id="slider1"
+            oninput="updatePin()" style="flex:1;">
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;min-width:40px;text-align:center;">__</span>
+          <input type="range" min="0" max="20" value="0" id="slider2"
+            oninput="updatePin()" style="flex:1;">
+        </div>
+        <input type="hidden" name="pin" id="pin" value="0-0">
+      </div>
+      <script>
+        function updatePin() {{
+          const v1 = document.getElementById('slider1').value;
+          const v2 = document.getElementById('slider2').value;
+          document.getElementById('val1').textContent = v1;
+          document.getElementById('val2').textContent = v2;
+          document.getElementById('pin').value = v1 + '-' + v2;
+        }}
+      </script>
+      {'<p style="color:var(--red);font-size:14px;margin-bottom:8px;">Incorrect PIN. Try again.</p>' if error else ''}
+      <button type="submit"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+               box-shadow:0 4px 12px rgba(58,125,68,0.3);margin-top:16px;">
+        Continue →
+      </button>
+    </form>
+  </div>
+</div>
+</body></html>"""
+                else:
+                    # No pin, straight in
                     session.permanent = True
                     session["username"] = username
                     session["display_name"] = raw_username
                     return redirect("/")
-                else:
-                    error = "Incorrect PIN. Try again."
             else:
-                confirm_user = raw_username
-
-        elif action == "create":
-            raw_confirm = request.form.get("confirm_username", "").strip()
-            username = safe_username(raw_confirm)
-            use_pin = request.form.get("use_pin") == "yes"
-            pin = request.form.get("pin", "") if use_pin else None
-            if len(username) > 18:
-                error = "Username must be 18 characters or less."
-            else:
-                ensure_user_exists(username, pin=pin)
-                session.permanent = True
-                session["username"] = username
-                session["display_name"] = raw_confirm
-                return redirect("/")
-
-    # Sliders for login (existing user with pin)
-    login_slider_html = """
-    <div id="pin-section" style="margin:16px 0;">
-        <p style="font-size:14px;color:var(--muted);margin-bottom:12px;">Enter your PIN</p>
-        <div style="display:flex;align-items:center;gap:16px;justify-content:center;margin-bottom:16px;">
-            <div style="text-align:center;">
-                <span id="login-val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
-                <input type="range" min="0" max="20" value="0" id="login-slider1"
-                    oninput="updateLoginPin()"
-                    style="width:120px;margin-top:8px;">
-            </div>
-            <span style="font-size:28px;font-weight:300;color:var(--muted);">·</span>
-            <div style="text-align:center;">
-                <span id="login-val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
-                <input type="range" min="0" max="20" value="0" id="login-slider2"
-                    oninput="updateLoginPin()"
-                    style="width:120px;margin-top:8px;">
-            </div>
-        </div>
-        <input type="hidden" name="pin" id="login-pin" value="">
-    </div>
-    <script>
-        function updateLoginPin() {
-            const v1 = document.getElementById('login-slider1').value;
-            const v2 = document.getElementById('login-slider2').value;
-            document.getElementById('login-val1').textContent = v1;
-            document.getElementById('login-val2').textContent = v2;
-            document.getElementById('login-pin').value = v1 + '-' + v2;
-        }
-    </script>
-    """
-
-    # Sliders for create (new user optional pin)
-    create_slider_html = """
-    <div style="margin:16px 0;">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:15px;font-weight:600;margin-bottom:12px;">
-            <input type="checkbox" id="pin-toggle" name="use_pin" value="yes"
-                onchange="togglePinSliders()"
-                style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;">
-            Keep it private — create a PIN
-        </label>
-        <div id="create-pin-section" style="display:none;margin-top:12px;">
-            <p style="font-size:13px;color:var(--muted);margin-bottom:12px;text-align:center;">Set your 2-number PIN</p>
-            <div style="display:flex;align-items:center;gap:16px;justify-content:center;margin-bottom:8px;">
-                <div style="text-align:center;">
-                    <span id="create-val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
-                    <input type="range" min="0" max="20" value="0" id="create-slider1"
-                        oninput="updateCreatePin()"
-                        style="width:120px;margin-top:8px;">
-                </div>
-                <span style="font-size:28px;font-weight:300;color:var(--muted);">·</span>
-                <div style="text-align:center;">
-                    <span id="create-val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;display:block;min-width:40px;">__</span>
-                    <input type="range" min="0" max="20" value="0" id="create-slider2"
-                        oninput="updateCreatePin()"
-                        style="width:120px;margin-top:8px;">
-                </div>
-            </div>
-            <input type="hidden" name="pin" id="create-pin" value="">
-        </div>
-    </div>
-    <script>
-        function togglePinSliders() {
-            const section = document.getElementById('create-pin-section');
-            section.style.display = document.getElementById('pin-toggle').checked ? 'block' : 'none';
-        }
-        function updateCreatePin() {
-            const v1 = document.getElementById('create-slider1').value;
-            const v2 = document.getElementById('create-slider2').value;
-            document.getElementById('create-val1').textContent = v1;
-            document.getElementById('create-val2').textContent = v2;
-            document.getElementById('create-pin').value = v1 + '-' + v2;
-        }
-    </script>
-    """
-
-    confirm_html = ""
-    if confirm_user:
-        confirm_html = f"""
-        <div style="background:#fff8f0;border:2px solid #f0d9c0;border-radius:var(--radius);padding:20px;margin-top:16px;text-align:center;">
-          <p style="font-size:16px;font-weight:600;margin-bottom:16px;">No list found for <strong>{confirm_user}</strong>. Create one?</p>
-          <form method="post" action="/login" style="display:flex;flex-direction:column;gap:10px;align-items:center;">
-            <input type="hidden" name="action" value="create">
-            <input type="hidden" name="confirm_username" value="{confirm_user}">
-            {create_slider_html}
-            <div style="display:flex;gap:10px;">
-                <button type="submit"
-                  style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
-                         font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
-                  Yes, create it
-                </button>
-                <a href="/login"
-                  style="padding:12px 24px;background:#f0ece4;color:var(--text);border-radius:10px;
-                         font-family:'Righteous',sans-serif;font-size:16px;display:inline-block;">
-                  Cancel
-                </a>
-            </div>
-          </form>
-        </div>"""
-
-    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
-
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head><title>Grocery List</title>{BASE_HEAD}</head>
+                # Username doesn't exist, ask to create
+                return f"""<!DOCTYPE html>
+<html lang="en"><head><title>Grocery List</title>{BASE_HEAD}</head>
 <body>
 <div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
   <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
-  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your username to continue</p>
+  <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+              padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);text-align:center;">
+    <p style="font-size:16px;font-weight:600;margin-bottom:16px;">No list found for <strong>{raw_username}</strong>. Create one?</p>
+    <form method="post" style="display:flex;gap:10px;justify-content:center;">
+      <input type="hidden" name="stage" value="create">
+      <input type="hidden" name="username" value="{raw_username}">
+      <button type="submit"
+        style="padding:12px 24px;background:var(--green);color:white;border:none;border-radius:10px;
+               font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
+        Yes, create it
+      </button>
+      <a href="/login"
+        style="padding:12px 24px;background:#f0ece4;color:var(--text);border-radius:10px;
+               font-family:'Righteous',sans-serif;font-size:16px;display:inline-block;">
+        Cancel
+      </a>
+    </form>
+  </div>
+</div>
+</body></html>"""
+
+        # Stage 2 — pin entry for existing user
+        elif stage == "pin":
+            pin = request.form.get("pin", "")
+            if check_pin(username, pin):
+                session.permanent = True
+                session["username"] = username
+                session["display_name"] = raw_username
+                return redirect("/")
+            else:
+                error = "incorrect"
+                # Re-show pin screen with error
+                return f"""<!DOCTYPE html>
+<html lang="en"><head><title>Grocery List</title>{BASE_HEAD}</head>
+<body>
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your PIN to continue</p>
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
     <form method="post">
-      <input type="hidden" name="action" value="login">
-      <input type="text" name="username" placeholder="Your username..." autofocus
-        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
-               border:2px solid var(--border);border-radius:10px;background:var(--cream);
-               color:var(--text);outline:none;margin-bottom:12px;"
-        onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
-        value="{confirm_user}">
-      {login_slider_html}
-      {error_html}
+      <input type="hidden" name="stage" value="pin">
+      <input type="hidden" name="username" value="{raw_username}">
+      <div style="margin:16px 0;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <span id="val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;min-width:40px;text-align:center;">__</span>
+          <input type="range" min="0" max="20" value="0" id="slider1"
+            oninput="updatePin()" style="flex:1;">
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;min-width:40px;text-align:center;">__</span>
+          <input type="range" min="0" max="20" value="0" id="slider2"
+            oninput="updatePin()" style="flex:1;">
+        </div>
+        <input type="hidden" name="pin" id="pin" value="0-0">
+      </div>
+      <script>
+        function updatePin() {{
+          const v1 = document.getElementById('slider1').value;
+          const v2 = document.getElementById('slider2').value;
+          document.getElementById('val1').textContent = v1;
+          document.getElementById('val2').textContent = v2;
+          document.getElementById('pin').value = v1 + '-' + v2;
+        }}
+      </script>
+      <p style="color:var(--red);font-size:14px;margin-bottom:8px;">Incorrect PIN. Try again.</p>
+      <button type="submit"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+               box-shadow:0 4px 12px rgba(58,125,68,0.3);margin-top:16px;">
+        Continue →
+      </button>
+    </form>
+  </div>
+</div>
+</body></html>"""
+
+        # Stage 3 — create confirmed, show optional pin screen
+        elif stage == "create":
+            return f"""<!DOCTYPE html>
+<html lang="en"><head><title>Grocery List</title>{BASE_HEAD}</head>
+<body>
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">One more step...</p>
+  <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+              padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+    <form method="post">
+      <input type="hidden" name="stage" value="finish">
+      <input type="hidden" name="username" value="{raw_username}">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:15px;font-weight:600;margin-bottom:16px;">
+        <input type="checkbox" id="pin-toggle" name="use_pin" value="yes"
+          onchange="togglePin()"
+          style="width:20px;height:20px;accent-color:var(--green);cursor:pointer;">
+        Keep it private — create a PIN
+      </label>
+      <div id="pin-section" style="display:none;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <span id="val1" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;min-width:40px;text-align:center;">__</span>
+          <input type="range" min="0" max="20" value="0" id="slider1"
+            oninput="updatePin()" style="flex:1;">
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="val2" style="font-size:28px;font-weight:700;text-decoration:underline;text-underline-offset:6px;min-width:40px;text-align:center;">__</span>
+          <input type="range" min="0" max="20" value="0" id="slider2"
+            oninput="updatePin()" style="flex:1;">
+        </div>
+        <input type="hidden" name="pin" id="pin" value="">
+      </div>
+      <script>
+        function togglePin() {{
+          const section = document.getElementById('pin-section');
+          section.style.display = document.getElementById('pin-toggle').checked ? 'block' : 'none';
+        }}
+        function updatePin() {{
+          const v1 = document.getElementById('slider1').value;
+          const v2 = document.getElementById('slider2').value;
+          document.getElementById('val1').textContent = v1;
+          document.getElementById('val2').textContent = v2;
+          document.getElementById('pin').value = v1 + '-' + v2;
+        }}
+      </script>
       <button type="submit"
         style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
                background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
@@ -541,9 +578,72 @@ def login():
       </button>
     </form>
   </div>
-  {confirm_html}
 </div>
 </body></html>"""
+
+        # Stage 4 — finish creating account
+        # Stage 4 — finish creating account
+        elif stage == "finish":
+            use_pin = request.form.get("use_pin") == "yes"
+            pin = request.form.get("pin", "") if use_pin else None
+            ensure_user_exists(username, pin=pin)
+            session.permanent = True
+            session["username"] = username
+            session["display_name"] = raw_username
+
+            pin_display = ""
+            if use_pin and pin:
+                parts = pin.split("-")
+                pin_display = f"{parts[0]}  ·  {parts[1]}" if len(parts) == 2 else pin
+
+            return f"""<!DOCTYPE html>
+<html lang="en">
+<head><title>Welcome!</title>{BASE_HEAD}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;gap:20px;">
+  <h1 style="margin-bottom:0;">🛒 You're all set!</h1>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:8px;">Save your login card so you don't forget</p>
+  <div id="login-card" style="background:#fff8f0;border:2px solid #e8d5b0;border-radius:20px;padding:32px 40px;text-align:center;width:300px;font-family:'DM Sans',sans-serif;">
+    <p style="font-size:13px;color:#aaa;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase;">Grocery List</p>
+    <p style="font-size:13px;color:#aaa;margin-bottom:4px;">grocerylist.devkeo.com</p>
+    <div style="border-top:1px solid #e8d5b0;margin:16px 0;"></div>
+    <p style="font-size:13px;color:#aaa;margin-bottom:4px;">Username</p>
+    <p style="font-size:26px;font-weight:700;color:#3a7d44;margin-bottom:16px;">{raw_username}</p>
+    {'<div style="border-top:1px solid #e8d5b0;margin:16px 0;"></div><p style="font-size:13px;color:#aaa;margin-bottom:4px;">PIN</p><p style="font-size:32px;font-weight:700;letter-spacing:8px;color:#333;">' + pin_display + '</p>' if use_pin and pin else '<div style="border-top:1px solid #e8d5b0;margin:16px 0;"></div><p style="font-size:13px;color:#aaa;">No PIN set</p>'}
+  </div>
+  <button onclick="downloadCard()"
+    style="padding:12px 28px;background:var(--green);color:white;border:none;border-radius:12px;
+           font-family:'Righteous',sans-serif;font-size:16px;cursor:pointer;">
+    Download Card
+  </button>
+  <a href="/"
+    style="padding:12px 28px;background:#f0ece4;color:var(--text);border-radius:12px;
+           font-family:'Righteous',sans-serif;font-size:16px;text-decoration:none;">
+    Go to my list →
+  </a>
+</div>
+<script>
+function downloadCard() {{
+  const card = document.getElementById('login-card');
+  html2canvas(card, {{
+    backgroundColor: '#fff8f0',
+    scale: 2
+  }}).then(canvas => {{
+    const link = document.createElement('a');
+    link.download = '{raw_username}-grocery-login.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }});
+}}
+</script>
+</body></html>"""
+
+@app.route("/logout")
+def logout():
+    session.pop("username", None)
+    return redirect("/login")
 
 @app.route("/logout")
 def logout():
