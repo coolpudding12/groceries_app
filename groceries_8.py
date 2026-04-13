@@ -581,8 +581,7 @@ def login():
 </div>
 </body></html>"""
 
-        # Stage 4 — finish creating account
-        # Stage 4 — finish creating account
+# Stage 4 — finish creating account
         elif stage == "finish":
             use_pin = request.form.get("use_pin") == "yes"
             pin = request.form.get("pin", "") if use_pin else None
