@@ -460,13 +460,13 @@ def login():
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
         <span id="pin-val1" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
              border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
-        <input type="range" min="0" max="10" value="0" id="pin-slider1"
+        <input type="range" min="0" max="20" value="0" id="pin-slider1"
           oninput="updateLoginPin()" style="flex:1;">
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
         <span id="pin-val2" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
              border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
-        <input type="range" min="0" max="10" value="0" id="pin-slider2"
+        <input type="range" min="0" max="20" value="0" id="pin-slider2"
           oninput="updateLoginPin()" style="flex:1;">
       </div>
       <div id="pin-error" style="color:var(--red);font-size:14px;margin-bottom:8px;display:none;">
@@ -496,15 +496,15 @@ def login():
 
       <div id="create-pin-section" style="display:none;margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-          <span id="create-val1" sstyle="font-size:28px;font-weight:700;min-width:40px;text-align:center;
+          <span id="create-val1" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
              border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
-          <input type="range" min="0" max="10" value="0" id="create-slider1"
+          <input type="range" min="0" max="20" value="0" id="create-slider1"
             oninput="updateCreatePin()" style="flex:1;">
         </div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
           <span id="create-val2" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
              border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
-          <input type="range" min="0" max="10" value="0" id="create-slider2"
+          <input type="range" min="0" max="20" value="0" id="create-slider2"
             oninput="updateCreatePin()" style="flex:1;">
         </div>
       </div>
