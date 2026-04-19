@@ -133,7 +133,7 @@ CATEGORIES = {
         "crumpet", "crumpets", "scone", "scones"
     ],
     "Pantry": [
-        "pasta", "rice", "noodles", "flour", "sugar", "salt", "pepper", "oil",
+        "pasta", "potato chips", "rice", "noodles", "flour", "sugar", "salt", "pepper", "oil",
         "olive oil", "vinegar", "soy sauce", "tomato sauce", "ketchup", "mustard",
         "mayonnaise", "honey", "jam", "peanut butter", "nutella", "vegemite",
         "stock", "broth", "soup", "canned", "tinned", "beans", "lentils",
@@ -187,6 +187,7 @@ def ensure_user_exists(username, pin=None):
             "misc": [],
             "pin": hashlib.sha256(pin.encode()).hexdigest() if pin else None
         }).execute()
+
 def check_pin(username, pin):
     result = supabase.table("users").select("pin").eq("username", username).execute()
     if not result.data:
@@ -276,11 +277,21 @@ def categorise_items(items):
     items = [item for item in items if isinstance(item, dict) and "name" in item]
     result = {cat: [] for cat in CATEGORIES}
     result["Other"] = []
-    pantry_override = ["tea", "can of", "cans of", "tin of", "tins of", "loose leaf tea", "soup", "oil"]
-    
+    pantry_override = ["tea", "can ", "cans ", " can", " cans", "can of", "cans of", "tin of", "tins of", "loose leaf tea", "soup", "oil", "cream of"]
+
     for item in items:
+        # If user has manually set a category, respect it
+        if item.get("category"):
+            cat = item["category"]
+            if cat in result:
+                result[cat].append(item)
+            else:
+                result["Other"].append(item)
+            continue
+
+        # Otherwise fall through to your existing logic
         name_lower = item["name"].lower()
-        if any (kw in name_lower for kw in pantry_override):
+        if any(kw in name_lower for kw in pantry_override):
             result["Pantry"].append(item)
             continue
         if any(kw in name_lower for kw in CATEGORIES["Frozen"]):
@@ -296,6 +307,7 @@ def categorise_items(items):
                 break
         if not assigned:
             result["Other"].append(item)
+
     return {cat: itms for cat, itms in result.items() if itms}
 
 def strip_quantity(name):
@@ -413,8 +425,8 @@ def login():
             session["display_name"] = raw_username
             pin_display = ""
             if pin:
-                parts = pin.split("-")
-                pin_display = f"{parts[0]} · {parts[1]}" if len(parts) == 2 else pin
+                pin_display = " · ".join(pin.split("-"))
+                supabase.table("users").update({"pin_display": pin_display}).eq("username", username).execute()
             return {
                 "status": "created",
                 "username": raw_username,
@@ -424,13 +436,13 @@ def login():
 
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><title>Grocery List</title>{BASE_HEAD}
+<head><title>Aisle Get It!</title>{BASE_HEAD}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
-  <h1 style="margin-bottom:8px;">🛒 Grocery List</h1>
-  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your username to continue</p>
+  <h1 style="margin-bottom:8px;">🛒 Aisle Get It!</h1>
+  <p id="step-subtitle" style="color:var(--muted);font-size:15px;margin-bottom:15px;">The shareable, simplified shopping list.</p>
 
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
@@ -454,20 +466,21 @@ def login():
 
     <!-- Step 2: PIN entry (existing user) -->
     <div id="step-pin" style="display:none;">
-      <p style="font-size:15px;font-weight:600;margin-bottom:16px;color:var(--text);">
+      <p style="font-size:15px;font-weight:600;margin-bottom:16px;color:var(--text);text-align:center;">
         Welcome back, <span id="display-name-pin"></span>! Enter your PIN.
       </p>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <span id="pin-val1" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
-             border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
-        <input type="range" min="0" max="20" value="0" id="pin-slider1"
-          oninput="updateLoginPin()" style="flex:1;">
+      <div style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
+        <span id="pin-val1" style="font-size:48px;font-weight:700;color:var(--green);
+              min-width:48px;text-align:center;">0</span>
+        <span style="font-size:48px;font-weight:700;color:var(--muted);">•</span>
+        <span id="pin-val2" style="font-size:48px;font-weight:700;color:var(--green);
+              min-width:48px;text-align:center;">0</span>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <span id="pin-val2" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
-             border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px;">
+        <input type="range" min="0" max="20" value="0" id="pin-slider1"
+          oninput="updateLoginPin()" style="width:100%;">
         <input type="range" min="0" max="20" value="0" id="pin-slider2"
-          oninput="updateLoginPin()" style="flex:1;">
+          oninput="updateLoginPin()" style="width:100%;">
       </div>
       <div id="pin-error" style="color:var(--red);font-size:14px;margin-bottom:8px;display:none;">
         Incorrect PIN. Try again.
@@ -483,11 +496,11 @@ def login():
     <!-- Step 3: New user confirmation -->
     <div id="step-new-user" style="display:none;">
       <p style="font-size:16px;font-weight:600;margin-bottom:16px;text-align:center;">
-        No list found for <strong id="display-name-new"></strong>. Create one?
+        No list found for <strong id="display-name-new" style="color:var(--green);"></strong>. Create one?
       </p>
 
       <!-- Optional PIN -->
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:15px;
+      <label style="display:flex;align-items:center;justify-content: center;gap:10px;cursor:pointer;font-size:15px;
                     font-weight:600;margin-bottom:16px;">
         <input type="checkbox" id="pin-toggle" onchange="togglePinSection()"
           style="width:20px;height:20px;accent-color:var(--green);cursor:pointer;">
@@ -495,17 +508,18 @@ def login():
       </label>
 
       <div id="create-pin-section" style="display:none;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-          <span id="create-val1" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
-             border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
-          <input type="range" min="0" max="20" value="0" id="create-slider1"
-            oninput="updateCreatePin()" style="flex:1;">
+        <div style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
+          <span id="create-val1" style="font-size:40px;font-weight:700;color:var(--green);
+                min-width:40px;text-align:center;">0</span>
+          <span style="font-size:40px;font-weight:700;color:var(--muted);">•</span>
+          <span id="create-val2" style="font-size:40px;font-weight:700;color:var(--green);
+                min-width:40px;text-align:center;">0</span>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-          <span id="create-val2" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;
-             border-bottom:3px solid #ccc; padding-bottom:4px; display:inline-block;"></span>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <input type="range" min="0" max="20" value="0" id="create-slider1"
+            oninput="updateCreatePin()" style="width:100%;">
           <input type="range" min="0" max="20" value="0" id="create-slider2"
-            oninput="updateCreatePin()" style="flex:1;">
+            oninput="updateCreatePin()" style="width:100%;">
         </div>
       </div>
 
@@ -525,7 +539,8 @@ def login():
 
     <!-- Step 4: Download card -->
     <div id="step-card" style="display:none;text-align:center;">
-      <h2 style="margin-bottom:4px;">🎉 You're all set!</h2>
+      <p style="font-size:28px;margin:0 0 4px;margin-top:0;">🎉</p>
+      <h2 style="margin-bottom:4px;">You're all set!</h2>
       <p style="color:var(--muted);font-size:14px;margin-bottom:20px;">Save your login card</p>
       <div id="login-card" style="background:#fff8f0;border:2px solid #e8d5b0;border-radius:20px;
            padding:28px 32px;text-align:center;font-family:'DM Sans',sans-serif;margin-bottom:16px;">
@@ -562,6 +577,21 @@ let currentUsername = '';
 let currentRaw = '';
 let currentPin = '';
 
+const STEP_SUBTITLES = {{
+  'step-username': 'Enter your username to continue.',
+  'step-pin':      'Welcome back — enter your PIN',
+  'step-new-user': 'Create your new grocery list',
+  'step-card':     'Share your login card to shop collaboratively',
+}};
+
+function showStep(stepId) {{
+  ['step-username', 'step-pin', 'step-new-user', 'step-card'].forEach(id => {{
+    document.getElementById(id).style.display = 'none';
+  }});
+  document.getElementById(stepId).style.display = 'block';
+  document.getElementById('step-subtitle').textContent = STEP_SUBTITLES[stepId];
+}}
+
 function checkUsername() {{
   const raw = document.getElementById('username-input').value.trim();
   if (!raw) {{
@@ -579,16 +609,14 @@ function checkUsername() {{
       }} else if (data.status === 'has_pin') {{
         currentRaw = raw;
         currentUsername = raw;
-        hideAll();
         document.getElementById('display-name-pin').textContent = raw;
-        document.getElementById('step-pin').style.display = 'block';
+        showStep('step-pin');
       }} else if (data.status === 'login_ok') {{
         window.location.href = '/';
       }} else if (data.status === 'new_user') {{
         currentRaw = raw;
-        hideAll();
         document.getElementById('display-name-new').textContent = raw;
-        document.getElementById('step-new-user').style.display = 'block';
+        showStep('step-new-user');
       }}
     }});
 }}
@@ -614,7 +642,7 @@ function verifyPin() {{
 function createAccount() {{
   const usePIN = document.getElementById('pin-toggle').checked;
   const pin = usePIN ? 
-    document.getElementById('create-slider1').value + '-' + document.getElementById('create-slider2').value 
+    document.getElementById('create-slider1').value + '-' + document.getElementById('create-slider2').value
     : '';
   const form = new FormData();
   form.append('action', 'create_account');
@@ -624,7 +652,6 @@ function createAccount() {{
     .then(r => r.json())
     .then(data => {{
       if (data.status === 'created') {{
-        hideAll();
         document.getElementById('card-username').textContent = data.username;
         if (data.has_pin) {{
           document.getElementById('card-pin').textContent = data.pin_display;
@@ -632,7 +659,7 @@ function createAccount() {{
         }} else {{
           document.getElementById('card-pin-section').style.display = 'none';
         }}
-        document.getElementById('step-card').style.display = 'block';
+        showStep('step-card');
       }}
     }});
 }}
@@ -656,16 +683,9 @@ function updateCreatePin() {{
   document.getElementById('create-val2').textContent = v2;
 }}
 
-function hideAll() {{
-  ['step-username','step-pin','step-new-user','step-card'].forEach(id => {{
-    document.getElementById(id).style.display = 'none';
-  }});
-}}
-
 function resetToStart() {{
-  hideAll();
   document.getElementById('username-input').value = '';
-  document.getElementById('step-username').style.display = 'block';
+  showStep('step-username');
 }}
 
 function showError(id, msg) {{
@@ -682,6 +702,7 @@ function downloadCard() {{
     link.href = canvas.toDataURL('image/png');
     link.click();
   }});
+
 }}
 </script>
 </body></html>"""
@@ -690,6 +711,32 @@ function downloadCard() {{
 def logout():
     session.pop("username", None)
     return redirect("/login")
+
+@app.route("/set_pin", methods=["POST"])
+def set_pin():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+
+    # Check pin_set flag — block if already set
+    result = supabase.table("users").select("pin, pin_set").eq("username", username).execute()
+    user = result.data[0] if result.data else None
+    if not user or user.get("pin_set"):
+        return {"status": "error", "message": "PIN already set."}, 200
+
+    pin = request.form.get("pin")
+    if not pin:
+        return {"status": "error", "message": "No PIN provided."}, 200
+
+    hashed = hashlib.sha256(pin.encode()).hexdigest()  # use whatever hashing function you already use
+    pin_display = " · ".join(pin.split("-"))
+    supabase.table("users").update({
+        "pin": hashed,
+        "pin_set": True,
+        "pin_display": pin_display
+    }).eq("username", username).execute()
+
+    return {"status": "ok", "pin_display": pin_display}, 200
 
 @app.route("/flybuys/edit", methods=["GET", "POST"])
 def flybuys_edit():
@@ -764,6 +811,10 @@ def home():
     items = load_items(username)
     duplicates = find_duplicates(items)
     last_deleted = session.get("last_deleted", None)
+    result = supabase.table("users").select("pin, pin_display").eq("username", username).execute()
+    user_data = result.data[0] if result.data else {}
+    has_pin = bool(user_data.get("pin"))
+    pin_display = user_data.get("pin_display") or ""
 
     list_html = ""
     for i, item in enumerate(items):
@@ -776,12 +827,16 @@ def home():
         if i in duplicates:
             dupe_border = "border-color:#f9a825;background:#fffdf0;"
             dupe_badge = '<span style="font-size:11px;font-weight:700;background:#fff3cd;color:#b45309;padding:2px 8px;border-radius:20px;margin-left:8px;white-space:nowrap;">⚠ duplicate?</span>'
+        item_id = item.get("id", i)
+        item_name = item["name"]
+        item_category = item.get("category", "Other")
         list_html += f"""
-        <li style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+        <li id="item-{i}" data-id="{item_id}" data-name="{item_name}" data-category="{item_category}"
+            style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
                    padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;
                    box-shadow:0 2px 8px rgba(0,0,0,0.04);{dupe_border}">
           {img_html}
-          <span style="flex:1;font-size:17px;font-weight:600;">{item["name"]}{dupe_badge}</span>
+          <span style="flex:1;font-size:17px;font-weight:600;">{item_name}{dupe_badge}</span>
           <a href="/delete/{i}" style="color:var(--red);font-size:22px;line-height:1;margin-left:10px;opacity:0.7;">×</a>
         </li>"""
 
@@ -800,20 +855,30 @@ def home():
             const b = document.getElementById('undo-bar');
             if (b) {{ b.style.opacity='0'; setTimeout(()=>b.style.display='none',500); }}
             fetch('/dismiss_undo');
-          }}, 10000);
+          }}, 5000);
           history.replaceState(null, '', '/');
         </script>"""
 
     shop_btn = ""
     if items:
         shop_btn = """
-        <a href="/shop" style="display:block;width:100%;margin-top:24px;padding:16px;
-           background:linear-gradient(135deg, var(--orange), var(--orange2));
-           color:white;border-radius:var(--radius);text-align:center;
-           font-family:'Righteous',sans-serif;font-size:22px;font-weight:600;
-           box-shadow:0 4px 15px rgba(240,125,53,0.35);">
-          🥦🥕 Ready to shop!
-        </a>"""
+        <div style="position:relative;width:100%;height:60px;background:#fff3e0;border-radius:30px;
+                    margin-top:24px;overflow:hidden;border:2px solid #f0a050;">
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                      font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
+                      opacity:0.6;user-select:none;pointer-events:none;">
+            Swipe to shop →
+          </div>
+          <div id="shop-slider"
+               style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                      background:linear-gradient(135deg,var(--orange),var(--orange2));
+                      border-radius:26px;cursor:grab;display:flex;align-items:center;
+                      justify-content:center;font-size:22px;
+                      box-shadow:0 4px 12px rgba(240,125,53,0.4);user-select:none;
+                      transform:scaleX(-1);">
+            🛒
+          </div>
+        </div>"""
 
     count_text = f"{len(items)} item{'s' if len(items) != 1 else ''} on your list" if items else "Your list is empty — add something!"
 
@@ -835,19 +900,18 @@ def home():
 
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><title>{display_name}'s Grocery List</title>{BASE_HEAD}</head>
+<head><title>{display_name}'s Grocery List</title>{BASE_HEAD}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
 <body>
 <div class="page">
-
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-    <h1 style="
-        display:flex;
-        align-items:center;
-        gap:{'6px' if len(display_name) <= 10 else '1px'};margin:0;">
-    <span style="font-size:{'32px' if len(display_name) <= 10 else '20px'};">🛒</span>
-    <span style="font-size:{'32px' if len(display_name) <= 10 else '20px'};">
-    {display_name}
-    <span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <h1 style="display:flex;align-items:center;gap:{'6px' if len(display_name) <= 10 else '1px'};margin:0;">
+      <span style="font-size:{'32px' if len(display_name) <= 10 else '20px'};">🛒</span>
+      <span onclick="openUserMenu()" style="font-size:{'32px' if len(display_name) <= 10 else '20px'};
+            cursor:pointer;border-bottom:2px dashed var(--green);padding-bottom:2px;">
+        {display_name}
+      </span>
     </h1>
     <div style="display:flex;gap:8px;">
       <button onclick="openMisc()" style="background:var(--cream);border:2px solid var(--border);
@@ -863,7 +927,94 @@ def home():
     </div>
   </div>
 
+  <!-- User menu overlay -->
+  <div id="user-menu-overlay" onclick="closeUserMenu()"
+    style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;"></div>
 
+  <div id="user-menu"
+    style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);
+           border-radius:20px 20px 0 0;padding:24px;z-index:201;
+           box-shadow:0 -4px 30px rgba(0,0,0,0.15);">
+    <p style="font-family:'Righteous',sans-serif;font-size:18px;color:var(--green);
+              margin:0 0 20px;">👤 {display_name}</p>
+    <button onclick="redownloadCard()"
+      style="width:100%;padding:14px;margin-bottom:10px;background:var(--cream);
+             border:2px solid var(--border);border-radius:12px;font-family:'Righteous',sans-serif;
+             font-size:16px;color:var(--text);cursor:pointer;text-align:left;">
+      📥 Re-download login card
+    </button>
+    <button onclick="openLeaderboard()"
+      style="width:100%;padding:14px;margin-bottom:10px;background:var(--cream);
+             border:2px solid var(--border);border-radius:12px;font-family:'Righteous',sans-serif;
+             font-size:16px;color:var(--text);cursor:pointer;text-align:left;">
+      🏆 Leaderboard
+    </button>
+    {('''
+    <button onclick="openPinSetup()" 
+      style="width:100%;padding:14px;margin-bottom:10px;background:var(--cream);
+             border:2px solid var(--border);border-radius:12px;font-family:'Righteous',sans-serif;
+             font-size:16px;color:var(--text);cursor:pointer;text-align:left;">
+      🔒 Set a PIN
+    </button>
+    ''') if not has_pin else ""}
+
+    <button onclick="closeUserMenu()"
+      style="width:100%;padding:14px;background:none;border:none;
+             font-size:15px;color:var(--muted);cursor:pointer;">
+      Cancel
+    </button>
+  </div>
+
+  <!-- PIN setup sheet -->
+  <div id="pin-setup-overlay" onclick="closePinSetup()"
+    style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:300;"></div>
+  <div id="pin-setup"
+    style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);
+           border-radius:20px 20px 0 0;padding:24px;z-index:301;
+           box-shadow:0 -4px 30px rgba(0,0,0,0.15);">
+    <p style="font-family:'Righteous',sans-serif;font-size:18px;color:var(--green);margin:0 0 6px;">🔒 Set your PIN</p>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 20px;">This can only be set once and cannot be changed.</p>
+    <div style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
+      <span id="new-pin-val1" style="font-size:40px;font-weight:700;color:var(--green);
+            min-width:48px;text-align:center;">0</span>
+      <span style="font-size:48px;font-weight:700;color:var(--muted);">•</span>
+      <span id="new-pin-val2" style="font-size:40px;font-weight:700;color:var(--green);
+            min-width:48px;text-align:center;">0</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+      <input type="range" min="0" max="20" value="0" id="new-pin-slider1"
+        oninput="updateNewPin()" style="width:100%;">
+      <input type="range" min="0" max="20" value="0" id="new-pin-slider2"
+        oninput="updateNewPin()" style="width:100%;">
+    </div>
+    <button onclick="savePin()"
+      style="width:100%;padding:14px;background:var(--green);color:white;border:none;
+             border-radius:12px;font-family:'Righteous',sans-serif;font-size:17px;
+             cursor:pointer;margin-bottom:10px;box-shadow:0 4px 12px rgba(58,125,68,0.3);">
+      Save PIN
+    </button>
+    <button onclick="closePinSetup()"
+      style="width:100%;padding:14px;background:none;border:none;
+             font-size:15px;color:var(--muted);cursor:pointer;">
+      Cancel
+    </button>
+  </div>
+
+  <div id="leaderboard-overlay" onclick="closeLeaderboard()"
+    style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:300;"></div>
+
+  <div id="leaderboard-sheet"
+    style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);
+           border-radius:20px 20px 0 0;padding:24px;z-index:301;
+           box-shadow:0 -4px 30px rgba(0,0,0,0.15);max-height:80vh;overflow-y:auto;">
+    <p style="font-family:'Righteous',sans-serif;font-size:18px;color:var(--green);margin:0 0 20px;">🏆 Leaderboard</p>
+    <div id="home-leaderboard-list"></div>
+    <button onclick="closeLeaderboard()"
+      style="width:100%;margin-top:16px;padding:14px;background:none;border:none;
+             font-size:15px;color:var(--muted);cursor:pointer;">
+      Close
+    </button>
+  </div>
 
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:18px;margin-bottom:20px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
@@ -946,6 +1097,156 @@ def home():
     document.getElementById('misc-panel').classList.remove('open');
     document.getElementById('misc-overlay').classList.remove('open');
   }}
+function openUserMenu() {{
+    document.getElementById('user-menu').style.display = 'block';
+    document.getElementById('user-menu-overlay').style.display = 'block';
+  }}
+  function closeUserMenu() {{
+    document.getElementById('user-menu').style.display = 'none';
+    document.getElementById('user-menu-overlay').style.display = 'none';
+  }}
+  function openPinSetup() {{
+    closeUserMenu();
+    document.getElementById('pin-setup').style.display = 'block';
+    document.getElementById('pin-setup-overlay').style.display = 'block';
+  }}
+  function closePinSetup() {{
+    document.getElementById('pin-setup').style.display = 'none';
+    document.getElementById('pin-setup-overlay').style.display = 'none';
+  }}
+  function updateNewPin() {{
+    document.getElementById('new-pin-val1').textContent = document.getElementById('new-pin-slider1').value;
+    document.getElementById('new-pin-val2').textContent = document.getElementById('new-pin-slider2').value;
+
+  }}
+  (function() {{
+    const slider = document.getElementById('shop-slider');
+    if (!slider) return;
+    const track = slider.parentElement;
+    let dragging = false;
+    let startX = 0;
+    let currentX = 0;
+    const maxX = () => track.offsetWidth - slider.offsetWidth - 8;
+
+    function start(x) {{
+      dragging = true;
+      startX = x - currentX;
+      slider.style.cursor = 'grabbing';
+    }}
+
+    function move(x) {{
+      if (!dragging) return;
+      currentX = Math.min(Math.max(0, x - startX), maxX());
+      slider.style.left = (4 + currentX) + 'px';
+      const pct = currentX / maxX();
+      track.style.background = `linear-gradient(to right, #ffe0b2 ${{Math.round(pct*100)}}%, #fff3e0 ${{Math.round(pct*100)}}%)`;
+      if (pct >= 0.95) {{
+        dragging = false;
+        slider.style.left = (4 + maxX()) + 'px';
+        slider.textContent = '🥦';
+        sessionStorage.setItem('shopStartTime', Date.now());
+        setTimeout(() => window.location.href = '/shop', 400);
+      }}
+    }}
+
+    function end() {{
+      if (!dragging) return;
+      dragging = false;
+      slider.style.cursor = 'grab';
+      currentX = 0;
+      slider.style.transition = 'left 0.3s';
+      slider.style.left = '4px';
+      track.style.background = '#fff3e0';
+      setTimeout(() => slider.style.transition = '', 300);
+    }}
+
+    slider.addEventListener('mousedown', e => start(e.clientX));
+    window.addEventListener('mousemove', e => move(e.clientX));
+    window.addEventListener('mouseup', end);
+    slider.addEventListener('touchstart', e => {{ e.preventDefault(); start(e.touches[0].clientX); }}, {{passive: false}});
+    window.addEventListener('touchmove', e => move(e.touches[0].clientX));
+    window.addEventListener('touchend', end);
+  }})();
+  function savePin() {{
+    const pin = document.getElementById('new-pin-slider1').value + '-' + 
+                document.getElementById('new-pin-slider2').value;
+    const form = new FormData();
+    form.append('action', 'set_pin');
+    form.append('pin', pin);
+    fetch('/set_pin', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok') {{
+          closePinSetup();
+          alert('PIN saved! Re-download your login card to save the new details.');
+          location.reload();
+        }}
+      }});
+  }}
+
+  function openLeaderboard() {{
+    closeUserMenu();
+    fetch('/leaderboard')
+      .then(r => r.json())
+      .then(data => {{
+        const list = document.getElementById('home-leaderboard-list');
+        if (data.scores.length === 0) {{
+          list.innerHTML = '<p style="font-size:13px;color:var(--muted);text-align:center;">No scores yet - be the first!</p>';
+        }} else {{
+          list.innerHTML = data.scores.map((s, i) => `
+            <div style="display:flex;align-items:center;justify-content:space-between;
+                        padding:10px 14px;background:${{i === 0 ? '#f0f9f0' : 'var(--cream)'}};
+                        border-radius:10px;margin-bottom:6px;">
+              <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--text);">
+                ${{i + 1}}. ${{s.arcade_name}}
+              </span>
+              <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--green);">
+                ${{s.score}}
+              </span>
+            </div>
+          `).join('');
+        }}
+        document.getElementById('leaderboard-sheet').style.display = 'block';
+        document.getElementById('leaderboard-overlay').style.display = 'block';
+      }});
+  }}
+
+  function closeLeaderboard() {{
+    document.getElementById('leaderboard-sheet').style.display = 'none';
+    document.getElementById('leaderboard-overlay').style.display = 'none';
+  }}
+
+  function redownloadCard() {{
+    closeUserMenu();
+    const username = "{display_name}";
+    const pinDisplay = "{pin_display}";
+    const showPin = pinDisplay && pinDisplay !== "None";
+
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#fff8f0;border:2px solid #e8d5b0;border-radius:20px;padding:28px 32px;text-align:center;font-family:DM Sans,sans-serif;position:fixed;left:-9999px;top:0;width:300px;';
+    card.innerHTML = `
+      <p style="font-size:11px;color:#aaa;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;">Aisle Get It!</p>
+      <p style="font-size:11px;color:#aaa;margin-bottom:12px;">grocerylist.devkeo.com</p>
+      <div style="border-top:1px solid #e8d5b0;margin:12px 0;"></div>
+      <p style="font-size:12px;color:#aaa;margin-bottom:4px;">Username</p>
+      <p style="font-size:24px;font-weight:700;color:#3a7d44;margin-bottom:12px;">${{username}}</p>
+      ${{showPin ? `
+        <div style="border-top:1px solid #e8d5b0;margin:12px 0;"></div>
+        <p style="font-size:12px;color:#aaa;margin-bottom:4px;">PIN</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:8px;color:#333;">${{pinDisplay}}</p>
+      ` : ''}}
+    `;
+    document.body.appendChild(card);
+    setTimeout(() => {{
+      html2canvas(card, {{ backgroundColor: '#fff8f0', scale: 2, width: 300 }}).then(canvas => {{
+        const link = document.createElement('a');
+        link.download = username + '-grocery-login.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        document.body.removeChild(card);
+      }});
+    }}, 100);
+  }}
 </script>
 </body></html>"""
 
@@ -959,6 +1260,7 @@ def shop():
     display_name = current_display_name()
     items = load_items(username)
     categories = categorise_items(items)
+    items_count = sum(len(cat_items) for cat_items in categories.values())
 
     misc_items = load_misc(username)
     misc_section = ""
@@ -999,8 +1301,12 @@ def shop():
                 except:
                     img_html = ""
             checked_attr = "checked" if item.get("checked") else ""
+            item_id = item.get("id", global_index)
+            item_category = item.get("category", category)
+            item_name = item["name"].replace('"', '&quot;')
             rows += f"""
-            <li class="shop-item" style="background:var(--card);border:2px solid var(--border);border-radius:12px;
+            <li class="shop-item" data-id="{item_id}" data-name="{item_name}" data-category="{item_category}"
+                style="background:var(--card);border:2px solid var(--border);border-radius:12px;
                 padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;transition:opacity 0.3s;">
               <label style="display:flex;align-items:center;width:100%;cursor:pointer;">
                 <input type="checkbox" onchange="toggleItem(this, {global_index})"
@@ -1008,6 +1314,9 @@ def shop():
                 {img_html}
                 <span style="font-size:17px;font-weight:600;">{item["name"]}</span>
               </label>
+              <span title="Hold to change category"
+                style="font-size:16px;color:var(--muted);opacity:0.8;margin-left:8px;flex-shrink:0;font-weight:600;
+                       user-select:none;cursor:context-menu;">⋮</span>              
             </li>"""
             global_index += 1
             
@@ -1048,38 +1357,91 @@ def shop():
   {categories_html}
   {misc_section}
 
-  <button onclick="document.getElementById('confirm').classList.add('visible')"
-    style="width:100%;margin-top:28px;padding:16px;font-family:'Righteous',sans-serif;font-size:20px;
-           font-weight:600;background:linear-gradient(135deg,var(--green),var(--green2));
-           color:white;border:none;border-radius:var(--radius);cursor:pointer;
-           box-shadow:0 4px 15px rgba(58,125,68,0.3);">
-    ✅ Shop complete
-  </button>
+    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+              margin-top:28px;overflow:hidden;border:2px solid #a5d6a7;">
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                opacity:0.6;user-select:none;pointer-events:none;">
+      Swipe when done →
+    </div>
+    <div id="complete-slider"
+         style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                background:linear-gradient(135deg,var(--green),var(--green2));
+                border-radius:26px;cursor:grab;display:flex;align-items:center;
+                justify-content:center;font-size:22px;
+                box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+      🥕
+    </div>
+  </div>
 
   <a href="/" style="display:flex;align-items:center;gap:6px;margin-top:18px;color:var(--muted);font-size:15px;font-weight:600;">
     ← Back to list
   </a>
 </div>
 
+<!-- Results overlay -->
+<div id="results-overlay"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+         z-index:200;justify-content:center;align-items:center;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;padding:28px 24px;
+              width:100%;max-width:480px;box-shadow:0 -4px 30px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto;">
+    <div style="text-align:center;margin-bottom:20px;">
+      <p style="font-size:28px;margin:0;">🏆</p>
+      <h2 style="font-family:'Righteous',sans-serif;font-size:26px;color:var(--green);margin:8px 0 4px;">Shop Complete!</h2>
+      <p id="result-time" style="font-size:14px;color:var(--muted);margin:0;"></p>
+    </div>
+
+    <div style="background:#f0f9f0;border:2px solid #a5d6a7;border-radius:16px;
+                padding:12px;text-align:center;margin-bottom:16px;">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">Your Score</p>
+      <p id="result-score" style="font-family:'Righteous',sans-serif;font-size:40px;
+                                   color:var(--green);margin:0;"></p>
+      <p id="result-breakdown" style="font-size:13px;color:var(--muted);margin:4px 0 0;"></p>
+    </div>
+
+    <p style="font-size:13px;font-weight:700;color:var(--text);margin:0 0 6px;">Enter your name for the leaderboard:</p>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <input id="arcade-input" maxlength="8" placeholder="AAA"
+        style="flex:1;min-width:0;padding:8px;font-size:18px;font-family:'Righteous',sans-serif;
+               text-align:center;text-transform:uppercase;letter-spacing:4px;
+               border:2px solid var(--border);border-radius:7px;background:var(--cream);
+               color:var(--green);outline:none;"
+        oninput="this.value=this.value.toUpperCase()"
+        onfocus="this.style.borderColor='var(--green)'"
+        onblur="this.style.borderColor='var(--border)'">
+      <button onclick="submitScore()"
+        style="padding:8px 16px;background:var(--green);color:white;border:none;
+               border-radius:12px;font-family:'Righteous',sans-serif;font-size:14px;cursor:pointer;flex-shrink:0;">
+        Submit
+      </button>
+    </div>
+
+    <!-- Leaderboard -->
+    <p style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;
+              letter-spacing:1px;margin:0 0 10px;">🏅 Leaderboard</p>
+    <div id="leaderboard-list"></div>
+    
+  <div style="display:flex;justify-content:center;margin-top:16px;">
+    <button onclick="finishShopping()"
+      style="width:100%;margin-top:16px;padding:14px;background:var(--green);color:white;
+             border:none;border-radius:12px;font-family:'Righteous',sans-serif;
+             font-size:16px;cursor:pointer;box-shadow:0 4px 12px rgba(58,125,68,0.3);">
+      Finish Shop + Clear Items
+    </button>
+  </div>
+</div>
+
 <form id="clear-form" action="/clear" method="post" style="display:none;">
   <input type="hidden" name="ticked" id="ticked-input" value="">
 </form>
 
-<div id="confirm" class="confirm-overlay" onclick="if(event.target===this)this.classList.remove('visible')">
-  <div class="confirm-box">
-    <div style="font-size:48px;margin-bottom:12px;">✰ ✰ ✰
-</div>
-    <h2>All done?</h2>
-    <p id="confirm-msg">This will clear your ticked items and can't be undone.</p>
-    <div class="confirm-btns">
-      <button class="btn-cancel" onclick="document.getElementById('confirm').classList.remove('visible')">Cancel</button>
-      <button class="btn-yes" onclick="submitClear()">Yes, clear it</button>
-    </div>
-  </div>
-</div>
+
 
 <script>
   const ticked = new Set();
+  let shopStartTime = null;
+
+  shopStartTime = sessionStorage.getItem('shopStartTime');
 
   function toggleItem(cb) {{
     const li = cb.closest('li');
@@ -1092,17 +1454,321 @@ def shop():
     }}
   }}
 
-  function submitClear() {{
+  function formatTime(seconds) {{
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m > 0 ? `${{m}}m ${{s}}s` : `${{s}}s`;
+  }}
+
+  function showResults() {{
+    const endTime = Date.now();
+    const startTime = parseInt(shopStartTime) || endTime;
+    const elapsed = Math.floor((endTime - startTime) / 1000);
+    const tickedCount = ticked.size;
+    const score = tickedCount > 0 ? Math.round((tickedCount * 10000) / Math.max(elapsed, 1)) : 0;
+
+    document.getElementById('result-score').textContent = score;
+    document.getElementById('result-breakdown').textContent = `${{tickedCount}} items purchased in ${{formatTime(elapsed)}}`;
+
+    window._shopResult = {{ score, itemsCount: tickedCount, timeSeconds: elapsed }};
+
+    fetch('/leaderboard')
+      .then(r => r.json())
+      .then(data => {{
+        const list = document.getElementById('leaderboard-list');
+        if (data.scores.length === 0) {{
+          list.innerHTML = '<p style="font-size:13px;color:var(--muted);text-align:center;">No scores yet — be the first!</p>';
+          return;
+        }}
+        list.innerHTML = data.scores.map((s, i) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;
+                      padding:10px 14px;background:${{i === 0 ? '#f0f9f0' : 'var(--cream)'}};
+                      border-radius:10px;margin-bottom:6px;">
+            <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--text);">
+              ${{i + 1}}. ${{s.arcade_name}}
+            </span>
+            <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--green);">
+              ${{s.score}}
+            </span>
+          </div>
+        `).join('');
+      }});
+
+    document.getElementById('results-overlay').style.display = 'flex';
+  }}
+
+  function submitScore() {{
+    const arcadeName = document.getElementById('arcade-input').value.trim();
+    if (!arcadeName || arcadeName.length < 1) {{
+      document.getElementById('arcade-input').style.borderColor = 'var(--red)';
+      return;
+    }}
+    const {{ score, itemsCount, timeSeconds }} = window._shopResult;
+    const form = new FormData();
+    form.append('arcade_name', arcadeName);
+    form.append('score', score);
+    form.append('items_count', itemsCount);
+    form.append('time_seconds', timeSeconds);
+    fetch('/save_score', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        // Show high score celebration if applicable
+        if (data.new_high_score) {{
+          const scoreEl = document.getElementById('result-score');
+          scoreEl.style.transition = 'transform 0.3s';
+          scoreEl.style.transform = 'scale(1.3)';
+          setTimeout(() => scoreEl.style.transform = 'scale(1)', 300);
+          const badge = document.createElement('p');
+          badge.textContent = '🏆 New High Score!';
+          badge.style.cssText = 'font-family:Righteous,sans-serif;font-size:18px;color:var(--green);text-align:center;margin:0 0 12px;';
+          scoreEl.parentElement.insertBefore(badge, scoreEl);
+        }}
+        fetch('/leaderboard')
+          .then(r => r.json())
+          .then(data => {{
+            const list = document.getElementById('leaderboard-list');
+            list.innerHTML = data.scores.map((s, i) => `
+              <div style="display:flex;align-items:center;justify-content:space-between;
+                          padding:10px 14px;background:${{i === 0 ? '#f0f9f0' : 'var(--cream)'}};
+                          border-radius:10px;margin-bottom:6px;">
+                <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--text);">
+                  ${{i + 1}}. ${{s.arcade_name}}
+                </span>
+                <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--green);">
+                  ${{s.score}}
+                </span>
+              </div>
+            `).join('');
+            document.getElementById('arcade-input').style.display = 'none';
+            document.querySelector('[onclick="submitScore()"]').style.display = 'none';
+            // If called from finishShopping, now actually finish
+            if (window._finishAfterSubmit) {{
+              window._finishAfterSubmit = false;
+              sessionStorage.removeItem('shopStartTime');
+              if (ticked.size === 0) {{
+                window.location.href = '/';
+              }} else {{
+                document.getElementById('ticked-input').value = JSON.stringify([...ticked]);
+                document.getElementById('clear-form').submit();
+              }}
+            }}
+          }});
+      }});
+  }}
+    const randomNames = [
+    "supashpr", "mcspeedy", "quickrun", "starshpr", "topshpr",
+    "shophero", "winner1", "thegoods", "chckndnr", "number1", "shplegnd"
+  ];
+
+  function getRandomName() {{
+    return randomNames[Math.floor(Math.random() * randomNames.length)];
+  }}
+    function finishShopping() {{
+    const arcadeInput = document.getElementById('arcade-input');
+    if (arcadeInput && arcadeInput.style.display !== 'none' && !arcadeInput.value.trim()) {{
+      window._finishAfterSubmit = true;
+      arcadeInput.value = getRandomName();
+      submitScore();
+      return;
+    }}
+    sessionStorage.removeItem('shopStartTime');
     if (ticked.size === 0) {{
-      document.getElementById('confirm-msg').textContent = 'Nothing is ticked — tick items first to clear them.';
+      window.location.href = '/';
       return;
     }}
     document.getElementById('ticked-input').value = JSON.stringify([...ticked]);
     document.getElementById('clear-form').submit();
   }}
+
+  function updateCategory(itemId, itemName, oldCategory, newCategory) {{
+    const form = new FormData();
+    form.append('item_id', itemId);
+    form.append('item_name', itemName);
+    form.append('old_category', oldCategory);
+    form.append('category', newCategory);
+    fetch('/update_category', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok') {{
+          location.reload();
+        }}
+      }})
+      .catch(err => console.error('Error:', err));
+  }}
+
+  document.addEventListener('DOMContentLoaded', () => {{
+    document.querySelectorAll('li[data-id]').forEach(el => {{
+      attachItemEvents(el);
+    }});
+  }});
+
+  let longPressTimer;
+
+  function attachItemEvents(itemEl) {{
+    itemEl.addEventListener('contextmenu', (e) => {{
+      e.preventDefault();
+      showCategoryMenu(e.clientX, e.clientY, itemEl);
+    }});
+    itemEl.addEventListener('touchstart', () => {{
+      longPressTimer = setTimeout(() => {{
+        const rect = itemEl.getBoundingClientRect();
+        showCategoryMenu(rect.left, rect.bottom, itemEl);
+      }}, 500);
+    }});
+    itemEl.addEventListener('touchend', () => clearTimeout(longPressTimer));
+    itemEl.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+  }}
+
+  function showCategoryMenu(x, y, itemEl) {{
+    removeCategoryMenu();
+    const itemId = itemEl.dataset.id;
+    const itemName = itemEl.dataset.name;
+    const currentCategory = itemEl.dataset.category;
+    const categories = ["Fruit & Veg","Meat & Fish","Dairy & Eggs","Bakery","Pantry","Drinks","Snacks","Household","Frozen","Other"];
+
+    const menu = document.createElement('div');
+    menu.id = 'category-menu';
+    menu.style.cssText = `position:fixed;background:var(--card);
+      border:2px solid var(--border);border-radius:12px;padding:8px;z-index:9999;
+      box-shadow:0 4px 20px rgba(0,0,0,0.15);min-width:160px;`;
+    menu.innerHTML = `<p style="font-size:12px;color:var(--muted);margin:0 0 6px 6px;">Move to...</p>`;
+
+    categories.forEach(cat => {{
+      const btn = document.createElement('button');
+      btn.textContent = cat;
+      btn.style.cssText = `display:block;width:100%;padding:8px 12px;text-align:left;
+        background:${{cat === currentCategory ? 'var(--green)' : 'transparent'}};
+        color:${{cat === currentCategory ? 'white' : 'var(--text)'}};
+        border:none;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;`;
+      btn.onclick = () => {{
+        updateCategory(itemId, itemName, currentCategory, cat);
+        itemEl.dataset.category = cat;
+        removeCategoryMenu();
+      }};
+      menu.appendChild(btn);
+    }});
+
+    document.body.appendChild(menu);
+
+    const menuHeight = menu.offsetHeight;
+    const menuWidth = menu.offsetWidth;
+    const windowHeight = window.innerHeight;
+    const windowWidth = window.innerWidth;
+
+    let top = y;
+    let left = x;
+
+    if (y + menuHeight > windowHeight) top = y - menuHeight;
+    if (x + menuWidth > windowWidth) left = x - menuWidth;
+    if (top < 0) top = 8;
+    if (left < 0) left = 8;
+
+    menu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+
+    setTimeout(() => document.addEventListener('click', removeCategoryMenu, {{ once: true }}), 0);
+  }}
+
+  function removeCategoryMenu() {{
+    document.getElementById('category-menu')?.remove();
+  }}
+
+  (function() {{
+    const slider = document.getElementById('complete-slider');
+    if (!slider) return;
+    const track = slider.parentElement;
+    let dragging = false;
+    let startX = 0;
+    let currentX = 0;
+    const maxX = () => track.offsetWidth - slider.offsetWidth - 8;
+
+    function start(x) {{
+      dragging = true;
+      startX = x - currentX;
+      slider.style.cursor = 'grabbing';
+    }}
+
+    function move(x) {{
+      if (!dragging) return;
+      currentX = Math.min(Math.max(0, x - startX), maxX());
+      slider.style.left = (4 + currentX) + 'px';
+      const pct = currentX / maxX();
+      track.style.background = `linear-gradient(to right, #c8e6c9 ${{Math.round(pct*100)}}%, #e8f5e9 ${{Math.round(pct*100)}}%)`;
+      if (pct >= 0.95) {{
+        dragging = false;
+        slider.style.left = (4 + maxX()) + 'px';
+        slider.textContent = '🎉';
+        setTimeout(() => showResults(), 400);
+      }}
+    }}
+
+    function end() {{
+      if (!dragging) return;
+      dragging = false;
+      slider.style.cursor = 'grab';
+      currentX = 0;
+      slider.style.transition = 'left 0.3s';
+      slider.style.left = '4px';
+      track.style.background = '#e8f5e9';
+      setTimeout(() => slider.style.transition = '', 300);
+    }}
+
+    slider.addEventListener('mousedown', e => start(e.clientX));
+    window.addEventListener('mousemove', e => move(e.clientX));
+    window.addEventListener('mouseup', end);
+    slider.addEventListener('touchstart', e => {{ e.preventDefault(); start(e.touches[0].clientX); }}, {{passive: false}});
+    window.addEventListener('touchmove', e => move(e.touches[0].clientX));
+    window.addEventListener('touchend', end);
+  }})();
 </script>
 
 </body></html>"""
+
+# --- Save score and leaderboard ---
+
+@app.route("/save_score", methods=["POST"])
+def save_score():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    arcade_name = request.form.get("arcade_name", "???").strip().upper()[:8]
+    score = int(request.form.get("score"))
+    items_count = int(request.form.get("items_count"))
+    time_seconds = int(request.form.get("time_seconds"))
+
+    # Check current #1 score on the leaderboard
+    top = supabase.table("leaderboard").select("score").eq("username", username).order("score", desc=True).limit(1).execute()
+    current_top_score = top.data[0]["score"] if top.data else 0
+    new_high_score = score > current_top_score
+
+    # Check if this arcade name already has an entry
+    existing = supabase.table("leaderboard").select("*").eq("username", username).eq("arcade_name", arcade_name).execute()
+
+    if existing.data:
+        if score > existing.data[0]["score"]:
+            supabase.table("leaderboard").update({
+                "score": score,
+                "items_count": items_count,
+                "time_seconds": time_seconds
+            }).eq("id", existing.data[0]["id"]).execute()
+    else:
+        supabase.table("leaderboard").insert({
+            "username": username,
+            "arcade_name": arcade_name,
+            "score": score,
+            "items_count": items_count,
+            "time_seconds": time_seconds
+        }).execute()
+
+    return {"status": "ok", "new_high_score": new_high_score}, 200
+
+@app.route("/leaderboard")
+def get_leaderboard():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    result = supabase.table("leaderboard").select("*").eq("username", username).gt("score",0).order("score", desc=True).limit(5).execute()
+    return {"status": "ok", "scores": result.data}, 200
 
 # --- Add item ---
 
@@ -1250,6 +1916,35 @@ def clear():
     save_items(username, remaining)
     return redirect("/")
 
+@app.route("/update_category", methods=["POST"])
+def update_category():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    item_name = request.form.get("item_name")
+    new_category = request.form.get("category")
+    old_category = request.form.get("old_category")
+
+    # Load items, find the one by name, update its category
+    items = load_items(username)
+    for item in items:
+        if item.get("name") == item_name:
+            item["category"] = new_category
+            break
+
+    # Save back to the users table
+    save_items(username, items)
+
+    # Log the override for your review
+    supabase.table("category_overrides").insert({
+        "item_name": item_name,
+        "old_category": old_category,
+        "new_category": new_category,
+        "username": username
+    }).execute()
+
+    return {"status": "ok"}, 200
+
 # --- Export ---
 
 @app.route("/export")
@@ -1341,7 +2036,7 @@ def export():
   {flybuys_html}
   {categories_html}
   {misc_section_html}
-  <p style="text-align:center;color:#8a8070;font-size:12px;margin-top:32px;">Exported from Grocery List app</p>
+  <p style="text-align:center;color:#8a8070;font-size:12px;margin-top:32px;">Exported from Aisle Get It! app</p>
 </body>
 </html>"""
 
