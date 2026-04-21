@@ -1,6 +1,6 @@
 {
   "name": "Aisle Get It!",
-  "short_name": "Aisle",
+  "short_name": "AisleGetIt!",
   "description": "The shareable, simplified shopping list",
   "start_url": "/",
   "display": "standalone",
