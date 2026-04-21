@@ -1465,7 +1465,7 @@ def shop():
     const startTime = parseInt(shopStartTime) || endTime;
     const elapsed = Math.floor((endTime - startTime) / 1000);
     const tickedCount = ticked.size;
-    const score = tickedCount > 0 ? Math.round((tickedCount * 10000) / Math.max(elapsed, 1)) : 0;
+    const score = tickedCount > 0 ? Math.round((tickedCount * 100000) / Math.max(elapsed / 60, 0.1)) : 0;
 
     document.getElementById('result-score').textContent = score;
     document.getElementById('result-breakdown').textContent = `${{tickedCount}} items purchased in ${{formatTime(elapsed)}}`;
