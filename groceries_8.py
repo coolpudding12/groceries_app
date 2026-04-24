@@ -1409,7 +1409,7 @@ def shop():
         ✅ Tick items as you add them to your cart
       </p>
       <p style="font-size:13px;color:var(--muted);margin:0;">
-        ⋮ Long press on an item to change its category
+        ⋮ Long press on an item to change its aisle
       </p>
     </div>
     <button onclick="document.getElementById('shop-tips').style.display='none'"
