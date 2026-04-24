@@ -883,7 +883,7 @@ def home():
                   animation:pulse-border 2s ease-in-out infinite;">
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
                     font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
-                    opacity:0.6;user-select:none;pointer-events:none;">
+                    opacity:0.6;user-select:none;pointer-events:none;padding-left:64px;">
           Swipe to start shopping →
         </div>
         <div id="shop-slider"
@@ -1498,7 +1498,7 @@ def shop():
                   animation:pulse-border-orange 2s ease-in-out infinite;">
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
                     font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
-                    opacity:0.6;user-select:none;pointer-events:none;">
+                    opacity:0.6;user-select:none;pointer-events:none;padding-left:64px;">
           Swipe to finish & clear list→
         </div>
         <div id="finish-slider"
@@ -1519,7 +1519,7 @@ def shop():
 <script>
   const ticked = new Set();
   let shopStartTime = null;
-  
+
   // Keep screen awake while shopping
   let wakeLock = null;
   async function requestWakeLock() {{
