@@ -1703,7 +1703,20 @@ def shop():
     const itemId = itemEl.dataset.id;
     const itemName = itemEl.dataset.name;
     const currentCategory = itemEl.dataset.category;
-    const categories = ["🥦Fruit & Veg","🥩Meat & Fish","🧀Dairy & Eggs","🍞Bakery","🥫Pantry","🧃Drinks","🍫Snacks","🧹Household","🧊Frozen","👾Other"];
+    const categoryEmojis = {{
+      "Fruit & Veg": "🥦",
+      "Meat & Fish": "🥩",
+      "Dairy & Eggs": "🧀",
+      "Bakery": "🍞",
+      "Pantry": "🥫",
+      "Drinks": "🧃",
+      "Snacks": "🍫",
+      "Household": "🧹",
+      "Frozen": "🧊",
+      "Other": "👾"
+    }};
+
+    const categories = ["Fruit & Veg","Meat & Fish","Dairy & Eggs","Bakery","Pantry","Drinks","Snacks","Household","Frozen","Other"];
 
     const menu = document.createElement('div');
     menu.id = 'category-menu';
@@ -1714,7 +1727,7 @@ def shop():
 
     categories.forEach(cat => {{
       const btn = document.createElement('button');
-      btn.textContent = cat;
+      btn.textContent = `${{categoryEmojis[cat] || ''}} ${{cat}}`;
       btn.style.cssText = `display:block;width:100%;padding:8px 12px;text-align:left;
         background:${{cat === currentCategory ? 'var(--green)' : 'transparent'}};
         color:${{cat === currentCategory ? 'white' : 'var(--text)'}};
