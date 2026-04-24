@@ -1519,6 +1519,23 @@ def shop():
 <script>
   const ticked = new Set();
   let shopStartTime = null;
+  
+  // Keep screen awake while shopping
+  let wakeLock = null;
+  async function requestWakeLock() {{
+    try {{
+      wakeLock = await navigator.wakeLock.request('screen');
+    }} catch (err) {{
+      console.log('Wake lock not supported:', err);
+    }}
+  }}
+  requestWakeLock();
+
+  document.addEventListener('visibilitychange', () => {{
+    if (document.visibilityState === 'visible') {{
+      requestWakeLock();
+    }}
+  }});
 
   shopStartTime = sessionStorage.getItem('shopStartTime');
 
