@@ -7,7 +7,8 @@ import json, os, io, base64
 from supabase import create_client, Client
 from datetime import timedelta
 import hashlib
-
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "tacobell"
@@ -459,7 +460,7 @@ def login():
 
     <!-- Step 1: Username -->
     <div id="step-username">
-      <input type="text" id="username-input" placeholder="Your username..." autofocus
+      <input type="text" id="username-input" placeholder="Enter your list name..." autofocus
         style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
                border:2px solid var(--border);border-radius:10px;background:var(--cream);
                color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;"
@@ -505,16 +506,19 @@ def login():
 
     <!-- Step 3: New user confirmation -->
     <div id="step-new-user" style="display:none;">
+      <p style="font-size:16px;font-weight:400;margin-bottom:4px;text-align:center;color:var(--muted);">
+        No list found for <strong id="display-name-new" style="color:var(--green);"></strong>.
+      </p>
       <p style="font-size:16px;font-weight:600;margin-bottom:16px;text-align:center;">
-        No list found for <strong id="display-name-new" style="color:var(--green);"></strong>. Create one?
+        Want to create one?
       </p>
 
       <!-- Optional PIN -->
       <label style="display:flex;align-items:center;justify-content: center;gap:10px;cursor:pointer;font-size:15px;
                     font-weight:600;margin-bottom:16px;">
         <input type="checkbox" id="pin-toggle" onchange="togglePinSection()"
-          style="width:20px;height:20px;accent-color:var(--green);cursor:pointer;">
-        Keep it private — create a PIN
+          style="width:20px;height:12px;accent-color:var(--green);cursor:pointer;">
+        Keep your list private, add a PIN
       </label>
 
       <div id="create-pin-section" style="display:none;margin-bottom:16px;">
@@ -531,6 +535,9 @@ def login():
           <input type="range" min="0" max="20" value="0" id="create-slider2"
             oninput="updateCreatePin()" style="width:100%;">
         </div>
+        <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;">
+          Use the sliders above to set your list's permanent PIN number
+        </p>
       </div>
 
       <div style="display:flex;gap:10px;">
@@ -549,15 +556,13 @@ def login():
 
     <!-- Step 4: Download card -->
     <div id="step-card" style="display:none;text-align:center;">
-      <p style="font-size:28px;margin:0 0 4px;margin-top:0;">🎉</p>
-      <h2 style="margin-bottom:4px;">You're all set!</h2>
-      <p style="color:var(--muted);font-size:14px;margin-bottom:20px;">Save your login card</p>
+      <h2 style="margin-bottom:16px;">You're all set! 🎉</h2>
       <div id="login-card" style="background:#fff8f0;border:2px solid #e8d5b0;border-radius:20px;
            padding:28px 32px;text-align:center;font-family:'DM Sans',sans-serif;margin-bottom:16px;">
-        <p style="font-size:11px;color:#aaa;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;">Grocery List</p>
+        <p style="font-size:11px;color:#aaa;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;">Aisle Get It!</p>
         <p style="font-size:11px;color:#aaa;margin-bottom:12px;">grocerylist.devkeo.com</p>
         <div style="border-top:1px solid #e8d5b0;margin:12px 0;"></div>
-        <p style="font-size:12px;color:#aaa;margin-bottom:4px;">Username</p>
+        <p style="font-size:12px;color:#aaa;margin-bottom:4px;">LIST NAME</p>
         <p id="card-username" style="font-size:24px;font-weight:700;color:#3a7d44;margin-bottom:12px;"></p>
         <div id="card-pin-section">
           <div style="border-top:1px solid #e8d5b0;margin:12px 0;"></div>
@@ -565,6 +570,7 @@ def login():
           <p id="card-pin" style="font-size:28px;font-weight:700;letter-spacing:8px;color:#333;"></p>
         </div>
       </div>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">Share your list card to shop collaboratively.</p>
       <button onclick="downloadCard()"
         style="width:100%;padding:12px;background:var(--green);color:white;border:none;
                border-radius:12px;font-family:'Righteous',sans-serif;font-size:16px;
@@ -578,7 +584,6 @@ def login():
         Go to my list →
       </a>
     </div>
-
   </div>
 </div>
 
@@ -588,10 +593,9 @@ let currentRaw = '';
 let currentPin = '';
 
 const STEP_SUBTITLES = {{
-  'step-username': 'Enter your username to continue.',
+  'step-username': 'Enter your list name to get started.',
   'step-pin':      'Welcome back — enter your PIN',
   'step-new-user': 'Create your new grocery list',
-  'step-card':     'Share your login card to shop collaboratively',
 }};
 
 function showStep(stepId) {{
@@ -869,26 +873,29 @@ def home():
           history.replaceState(null, '', '/');
         </script>"""
 
-    shop_btn = ""
-    if items:
-        shop_btn = """
-        <div style="position:relative;width:100%;height:60px;background:#fff3e0;border-radius:30px;
-                    margin-top:24px;overflow:hidden;border:2px solid #f0a050;">
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-                      font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
-                      opacity:0.6;user-select:none;pointer-events:none;">
-            Swipe to shop →
-          </div>
-          <div id="shop-slider"
-               style="position:absolute;left:4px;top:4px;width:52px;height:44px;
-                      background:linear-gradient(135deg,var(--orange),var(--orange2));
-                      border-radius:26px;cursor:grab;display:flex;align-items:center;
-                      justify-content:center;font-size:22px;
-                      box-shadow:0 4px 12px rgba(240,125,53,0.4);user-select:none;
-                      transform:scaleX(-1);">
-            🛒
-          </div>
-        </div>"""
+    shop_btn = """
+    <div style="height:80px;"></div>
+    <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
+                background:linear-gradient(to top, var(--cream) 80%, transparent);
+                z-index:50;">
+      <div style="position:relative;width:100%;height:60px;background:#fff3e0;border-radius:30px;
+                  overflow:hidden;border:2px solid #f0a050;
+                  animation:pulse-border 2s ease-in-out infinite;">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                    font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
+                    opacity:0.6;user-select:none;pointer-events:none;">
+          Swipe to start shopping →
+        </div>
+        <div id="shop-slider"
+             style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                    background:linear-gradient(135deg,var(--orange),var(--orange2));
+                    border-radius:26px;cursor:grab;display:flex;align-items:center;
+                    justify-content:center;font-size:22px;
+                    box-shadow:0 4px 12px rgba(240,125,53,0.4);user-select:none;">
+          ✅
+        </div>
+      </div>
+    </div>"""
 
     count_text = f"{len(items)} item{'s' if len(items) != 1 else ''} on your list" if items else "Your list is empty — add something!"
 
@@ -912,6 +919,13 @@ def home():
 <html lang="en">
 <head><title>{display_name}'s Grocery List</title>{BASE_HEAD}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  @keyframes pulse-border {{
+    0%   {{ box-shadow: 0 0 0 0 rgba(240,125,53,0.4); }}
+    50%  {{ box-shadow: 0 0 0 8px rgba(240,125,53,0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(240,125,53,0); }}
+  }}
+</style>
 </head>
 <body>
 <div class="page">
@@ -1051,11 +1065,26 @@ def home():
   </div>
 
   {undo_html}
-
   <p style="font-size:13px;color:var(--muted);font-weight:600;margin:16px 0 12px;text-transform:uppercase;letter-spacing:0.5px;">{count_text}</p>
-
+  <div id="shop-hint" style="background:linear-gradient(135deg,var(--green),var(--green2));
+              border-radius:12px;padding:10px 14px;margin-bottom:16px;
+              display:flex;align-items:center;gap:12px;">
+    <span style="font-size:20px;">🥦</span>
+    <div style="flex:1;">
+      <p style="font-family:'Righteous',sans-serif;font-size:14px;color:white;margin:0 0 2px;">
+        Ready to shop?
+      </p>
+      <p style="font-size:12px;color:rgba(255,255,255,0.85);margin:0;">
+        Swipe below to get your organised list
+      </p>
+    </div>
+    <button onclick="document.getElementById('shop-hint').style.display='none'"
+      style="background:none;border:none;color:white;font-size:20px;cursor:pointer;
+             opacity:0.7;padding:0;line-height:1;flex-shrink:0;">
+      ×
+    </button>
+  </div>
   <ul>{list_html}</ul>
-
   {shop_btn}
 
 </div>
@@ -1153,7 +1182,7 @@ function openUserMenu() {{
       if (pct >= 0.95) {{
         dragging = false;
         slider.style.left = (4 + maxX()) + 'px';
-        slider.textContent = '🥦';
+        slider.textContent = '🚀';
         sessionStorage.setItem('shopStartTime', Date.now());
         setTimeout(() => window.location.href = '/shop', 400);
       }}
@@ -1188,7 +1217,7 @@ function openUserMenu() {{
       .then(data => {{
         if (data.status === 'ok') {{
           closePinSetup();
-          alert('PIN saved! Re-download your login card to save the new details.');
+          alert('PIN saved! Re-download your list card to save the new details.');
           location.reload();
         }}
       }});
@@ -1201,7 +1230,7 @@ function openUserMenu() {{
       .then(data => {{
         const list = document.getElementById('home-leaderboard-list');
         if (data.scores.length === 0) {{
-          list.innerHTML = '<p style="font-size:13px;color:var(--muted);text-align:center;">No scores yet - be the first!</p>';
+          list.innerHTML = '<p style="font-size:13px;color:var(--muted);text-align:center;">No scores yet - complete a shop in record time to be the first!</p>';
         }} else {{
           list.innerHTML = data.scores.map((s, i) => `
             <div style="display:flex;align-items:center;justify-content:space-between;
@@ -1211,7 +1240,7 @@ function openUserMenu() {{
                 ${{i + 1}}. ${{s.arcade_name}}
               </span>
               <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--green);">
-                ${{s.score}}
+                ${{s.score.toLocaleString()}} pts
               </span>
             </div>
           `).join('');
@@ -1356,37 +1385,67 @@ def shop():
   .confirm-btns {{ display:flex;gap:10px; }}
   .btn-cancel {{ flex:1;padding:13px;font-size:16px;font-family:'DM Sans',sans-serif;font-weight:700;background:#f0ece4;color:var(--text);border:none;border-radius:12px;cursor:pointer; }}
   .btn-yes {{ flex:1;padding:13px;font-size:16px;font-family:'DM Sans',sans-serif;font-weight:700;background:var(--red);color:white;border:none;border-radius:12px;cursor:pointer; }}
+  @keyframes pulse-border-green {{
+    0%   {{ box-shadow: 0 0 0 0 rgba(58,125,68,0.4); }}
+    50%  {{ box-shadow: 0 0 0 8px rgba(58,125,68,0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(58,125,68,0); }}
+  }}
+  @keyframes pulse-border-orange {{
+    0%   {{ box-shadow: 0 0 0 0 rgba(240,125,53,0.4); }}
+    50%  {{ box-shadow: 0 0 0 8px rgba(240,125,53,0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(240,125,53,0); }}
+  }}
 </style>
 </head>
 <body>
 <div class="page">
   <h1>🛒 {display_name}</h1>
-
   {flybuys_html}
-
+  <div id="shop-tips" style="background:var(--cream);border:2px solid var(--border);
+              border-radius:12px;padding:10px 14px;margin-bottom:16px;
+              display:flex;align-items:center;gap:8px;">
+    <div style="flex:1;">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">
+        ✅ Tick items as you add them to your cart
+      </p>
+      <p style="font-size:13px;color:var(--muted);margin:0;">
+        ⋮ Long press on an item to change its category
+      </p>
+    </div>
+    <button onclick="document.getElementById('shop-tips').style.display='none'"
+      style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;
+             opacity:0.7;padding:0;line-height:1;flex-shrink:0;">
+      ×
+    </button>
+  </div>
   {categories_html}
   {misc_section}
-
-    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
-              margin-top:28px;overflow:hidden;border:2px solid #a5d6a7;">
-    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-                font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
-                opacity:0.6;user-select:none;pointer-events:none;">
-      Swipe when done →
-    </div>
-    <div id="complete-slider"
-         style="position:absolute;left:4px;top:4px;width:52px;height:44px;
-                background:linear-gradient(135deg,var(--green),var(--green2));
-                border-radius:26px;cursor:grab;display:flex;align-items:center;
-                justify-content:center;font-size:22px;
-                box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
-      🥕
-    </div>
-  </div>
 
   <a href="/" style="display:flex;align-items:center;gap:6px;margin-top:18px;color:var(--muted);font-size:15px;font-weight:600;">
     ← Back to list
   </a>
+  <div style="height:80px;"></div>
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
+              background:linear-gradient(to top, var(--cream) 80%, transparent);
+              z-index:50;">
+    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                overflow:hidden;border:2px solid #a5d6a7;
+                animation:pulse-border-green 2s ease-in-out infinite;">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                  font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                  opacity:0.6;user-select:none;pointer-events:none;">
+        Swipe when done →
+      </div>
+      <div id="complete-slider"
+           style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                  background:linear-gradient(135deg,var(--green),var(--green2));
+                  border-radius:26px;cursor:grab;display:flex;align-items:center;
+                  justify-content:center;font-size:22px;
+                  box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+        🥕
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Results overlay -->
@@ -1395,10 +1454,10 @@ def shop():
          z-index:200;justify-content:center;align-items:center;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;padding:28px 24px;
               width:100%;max-width:480px;box-shadow:0 -4px 30px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto;">
-    <div style="text-align:center;margin-bottom:20px;">
+        <div style="text-align:center;margin-bottom:16px;">
       <p style="font-size:28px;margin:0;">🏆</p>
       <h2 style="font-family:'Righteous',sans-serif;font-size:26px;color:var(--green);margin:8px 0 4px;">Shop Complete!</h2>
-      <p id="result-time" style="font-size:14px;color:var(--muted);margin:0;"></p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">The faster you shop, the higher your score.</p>
     </div>
 
     <div style="background:#f0f9f0;border:2px solid #a5d6a7;border-radius:16px;
@@ -1406,10 +1465,9 @@ def shop():
       <p style="font-size:13px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">Your Score</p>
       <p id="result-score" style="font-family:'Righteous',sans-serif;font-size:40px;
                                    color:var(--green);margin:0;"></p>
-      <p id="result-breakdown" style="font-size:13px;color:var(--muted);margin:4px 0 0;"></p>
     </div>
-
-    <p style="font-size:13px;font-weight:700;color:var(--text);margin:0 0 6px;">Enter your name for the leaderboard:</p>
+    <p id="result-time" style="font-size:12px;color:var(--muted);text-align:center;margin:0 0 16px;"></p>
+    <p style="font-size:13px;font-weight:700;color:var(--text);margin:0 0 6px;">Enter your name for this list's Leaderboard:</p>
     <div style="display:flex;gap:8px;margin-bottom:16px;">
       <input id="arcade-input" maxlength="8" placeholder="AAA"
         style="flex:1;min-width:0;padding:8px;font-size:18px;font-family:'Righteous',sans-serif;
@@ -1431,21 +1489,32 @@ def shop():
               letter-spacing:1px;margin:0 0 10px;">🏅 Leaderboard</p>
     <div id="leaderboard-list"></div>
     
-  <div style="display:flex;justify-content:center;margin-top:16px;">
-    <button onclick="finishShopping()"
-      style="width:100%;margin-top:16px;padding:14px;background:var(--green);color:white;
-             border:none;border-radius:12px;font-family:'Righteous',sans-serif;
-             font-size:16px;cursor:pointer;box-shadow:0 4px 12px rgba(58,125,68,0.3);">
-      Finish Shop + Clear Items
-    </button>
-  </div>
-</div>
+    <div style="height:70px;"></div>
+    <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
+                background:linear-gradient(to top, white 80%, transparent);
+                z-index:50;">
+      <div style="position:relative;width:100%;height:60px;background:#fff3e0;border-radius:30px;
+                  overflow:hidden;border:2px solid #f0a050;
+                  animation:pulse-border-orange 2s ease-in-out infinite;">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                    font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
+                    opacity:0.6;user-select:none;pointer-events:none;">
+          Swipe to finish & clear list→
+        </div>
+        <div id="finish-slider"
+             style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                    background:linear-gradient(135deg,var(--orange),var(--orange2));
+                    border-radius:26px;cursor:grab;display:flex;align-items:center;
+                    justify-content:center;font-size:22px;
+                    box-shadow:0 4px 12px rgba(240,125,53,0.4);user-select:none;">
+          🛍️
+        </div>
+      </div>
+    </div>
 
 <form id="clear-form" action="/clear" method="post" style="display:none;">
   <input type="hidden" name="ticked" id="ticked-input" value="">
 </form>
-
-
 
 <script>
   const ticked = new Set();
@@ -1477,8 +1546,8 @@ def shop():
     const tickedCount = ticked.size;
     const score = tickedCount > 0 ? Math.round((tickedCount * 100000) / Math.max(elapsed / 60, 0.1)) : 0;
 
-    document.getElementById('result-score').textContent = score;
-    document.getElementById('result-breakdown').textContent = `${{tickedCount}} items purchased in ${{formatTime(elapsed)}}`;
+    document.getElementById('result-score').textContent = score.toLocaleString();
+    document.getElementById('result-time').textContent = `${{getEncouragement()}} ${{tickedCount}} items purchased in ${{formatTime(elapsed)}}`;
 
     window._shopResult = {{ score, itemsCount: tickedCount, timeSeconds: elapsed }};
 
@@ -1545,7 +1614,7 @@ def shop():
                   ${{i + 1}}. ${{s.arcade_name}}
                 </span>
                 <span style="font-family:'Righteous',sans-serif;font-size:15px;color:var(--green);">
-                  ${{s.score}}
+                  ${{s.score.toLocaleString()}} pts
                 </span>
               </div>
             `).join('');
@@ -1730,6 +1799,63 @@ def shop():
     window.addEventListener('touchmove', e => move(e.touches[0].clientX));
     window.addEventListener('touchend', end);
   }})();
+
+    (function() {{
+    const slider = document.getElementById('finish-slider');
+    if (!slider) return;
+    const track = slider.parentElement;
+    let dragging = false;
+    let startX = 0;
+    let currentX = 0;
+    const maxX = () => track.offsetWidth - slider.offsetWidth - 8;
+
+    function start(x) {{
+      dragging = true;
+      startX = x - currentX;
+      slider.style.cursor = 'grabbing';
+    }}
+
+    function move(x) {{
+      if (!dragging) return;
+      currentX = Math.min(Math.max(0, x - startX), maxX());
+      slider.style.left = (4 + currentX) + 'px';
+      const pct = currentX / maxX();
+      track.style.background = `linear-gradient(to right, #ffe0b2 ${{Math.round(pct*100)}}%, #fff3e0 ${{Math.round(pct*100)}}%)`;
+      if (pct >= 0.95) {{
+        dragging = false;
+        slider.style.left = (4 + maxX()) + 'px';
+        slider.textContent = '✓';
+        setTimeout(() => finishShopping(), 400);
+      }}
+    }}
+
+    function end() {{
+      if (!dragging) return;
+      dragging = false;
+      slider.style.cursor = 'grab';
+      currentX = 0;
+      slider.style.transition = 'left 0.3s';
+      slider.style.left = '4px';
+      track.style.background = '#fff3e0';
+      setTimeout(() => slider.style.transition = '', 300);
+    }}
+
+    slider.addEventListener('mousedown', e => start(e.clientX));
+    window.addEventListener('mousemove', e => move(e.clientX));
+    window.addEventListener('mouseup', end);
+    slider.addEventListener('touchstart', e => {{ e.preventDefault(); start(e.touches[0].clientX); }}, {{passive: false}});
+    window.addEventListener('touchmove', e => move(e.touches[0].clientX));
+    window.addEventListener('touchend', end);
+  }})();
+
+    const encouragements = [
+    "Nice!", "Legend!", "Speedy!", "On fire!", "Crushing it!",
+    "Superstar!", "Swift!", "Nailed it!", "Impressive!", "Zooming!"
+  ];
+
+  function getEncouragement() {{
+    return encouragements[Math.floor(Math.random() * encouragements.length)];
+  }}
 </script>
 
 </body></html>"""
