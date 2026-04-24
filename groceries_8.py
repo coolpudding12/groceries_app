@@ -1877,24 +1877,14 @@ def save_score():
     current_top_score = top.data[0]["score"] if top.data else 0
     new_high_score = score > current_top_score
 
-    # Check if this arcade name already has an entry
-    existing = supabase.table("leaderboard").select("*").eq("username", username).eq("arcade_name", arcade_name).execute()
-
-    if existing.data:
-        if score > existing.data[0]["score"]:
-            supabase.table("leaderboard").update({
-                "score": score,
-                "items_count": items_count,
-                "time_seconds": time_seconds
-            }).eq("id", existing.data[0]["id"]).execute()
-    else:
-        supabase.table("leaderboard").insert({
-            "username": username,
-            "arcade_name": arcade_name,
-            "score": score,
-            "items_count": items_count,
-            "time_seconds": time_seconds
-        }).execute()
+    # Always insert a new entry
+    supabase.table("leaderboard").insert({
+        "username": username,
+        "arcade_name": arcade_name,
+        "score": score,
+        "items_count": items_count,
+        "time_seconds": time_seconds
+    }).execute()
 
     return {"status": "ok", "new_high_score": new_high_score}, 200
 
