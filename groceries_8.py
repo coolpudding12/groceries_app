@@ -1703,7 +1703,7 @@ def shop():
     const itemId = itemEl.dataset.id;
     const itemName = itemEl.dataset.name;
     const currentCategory = itemEl.dataset.category;
-    const categories = ["Fruit & Veg","Meat & Fish","Dairy & Eggs","Bakery","Pantry","Drinks","Snacks","Household","Frozen","Other"];
+    const categories = ["🥦Fruit & Veg","🥩Meat & Fish","🧀Dairy & Eggs","🍞Bakery","🥫Pantry","🧃Drinks","🍫Snacks","🧹Household","🧊Frozen","👾Other"];
 
     const menu = document.createElement('div');
     menu.id = 'category-menu';
