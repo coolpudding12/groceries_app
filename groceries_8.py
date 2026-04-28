@@ -41,16 +41,24 @@ def generate_barcode_b64(number):
 def flybuys_file(username):
     return f"rewards_{safe_username(username)}.json"
 
-def load_flybuys(username):
-    result = supabase.table("users").select("flybuys").eq("username", username).execute()
+def load_rewards_cards(username):
+    result = supabase.table("users").select("rewards_cards, active_card, flybuys").eq("username", username).execute()
     if result.data:
-        return result.data[0].get("flybuys", "")
-    return ""
+        cards = result.data[0].get("rewards_cards") or []
+        active = result.data[0].get("active_card") or 0
+        # Migrate flybuys if rewards_cards is empty
+        if not cards:
+            flybuys = result.data[0].get("flybuys", "")
+            if flybuys:
+                cards = [{"name": "Flybuys", "number": flybuys}]
+        return cards, active
+    return [], 0
 
+def save_rewards_cards(username, cards):
+    supabase.table("users").update({"rewards_cards": cards}).eq("username", username).execute()
 
-def save_flybuys(username, number):
-    supabase.table("users").update({"flybuys": number}).eq("username", username).execute()
-
+def set_active_card(username, index):
+    supabase.table("users").update({"active_card": index}).eq("username", username).execute()
 
 def format_flybuys_display(number):
     # Format raw digits nicely e.g. 27932023822170 -> 2793 2023 8221 70
@@ -59,34 +67,57 @@ def format_flybuys_display(number):
     return " ".join(parts)
 
 def get_flybuys_card_html(username, css_vars=True):
-    """Returns flybuys card HTML, or an 'add card' prompt if not set."""
-    number = load_flybuys(username)
+    cards, active = load_rewards_cards(username)
     border = "var(--border)" if css_vars else "#e8e0d4"
     radius = "var(--radius)" if css_vars else "14px"
     muted = "var(--muted)" if css_vars else "#8a8070"
 
-    if number:
-        display = format_flybuys_display(number)
-        try:
-            barcode_b64 = generate_barcode_b64(number)
-            barcode_img = f'<img src="data:image/png;base64,{barcode_b64}" alt="Rewards Card barcode" style="width:100%;max-width:320px;height:66px;object-fit:fill;image-rendering:pixelated;">'
-        except:
-            barcode_img = '<p style="color:#e05252;font-size:13px;">Could not generate barcode</p>'
+
+    if not cards:
         return f"""
-        <div style="background:white;border:2px solid {border};border-radius:{radius};padding:16px;margin-bottom:24px;text-align:center;">
-          <div style="font-family:\'Righteous\',sans-serif;font-size:13px;color:{muted};letter-spacing:1px;margin-bottom:8px;">REWARDS</div>
-          {barcode_img}
-          <div style="font-size:13px;color:{muted};margin-top:6px;letter-spacing:3px;">{display}</div>
-          <a href="/flybuys/edit" style="display:inline-block;margin-top:10px;font-size:12px;color:{muted};text-decoration:underline;">Change number</a>
-        </div>"""
-    else:
-        return f"""
-        <a href="/flybuys/edit" style="display:block;background:white;border:2px dashed {border};border-radius:{radius};
+        <a href="/rewards/add" style="display:block;background:white;border:2px dashed {border};border-radius:{radius};
            padding:16px;margin-bottom:24px;text-align:center;color:{muted};">
           <div style="font-size:24px;margin-bottom:6px;">💳</div>
-          <div style="font-family:\'Righteous\',sans-serif;font-size:15px;">Add Rewards Card</div>
+          <div style="font-family:'Righteous',sans-serif;font-size:15px;">Add Rewards Card</div>
           <div style="font-size:12px;margin-top:4px;">Tap to enter your number</div>
         </a>"""
+
+    # Clamp active index
+    if active >= len(cards):
+        active = 0
+
+    card = cards[active]
+    number = card.get("number", "")
+    name = card.get("name", "Rewards Card")
+
+    # Tab switcher if more than one card
+    tabs_html = ""
+    if len(cards) > 1:
+        tabs = ""
+        for i, c in enumerate(cards):
+            selected = "background:var(--green);color:white;" if i == active else "background:var(--cream);color:var(--text);"
+            tabs += f'<a href="/rewards/select/{i}" style="flex:1;padding:8px;text-align:center;border-radius:8px;font-family:\'Righteous\',sans-serif;font-size:13px;{selected}text-decoration:none;">{c["name"]}</a>'
+        tabs_html = f'<div style="display:flex;gap:6px;margin-bottom:12px;">{tabs}</div>'
+
+    display = format_flybuys_display(number)
+    try:
+        barcode_b64 = generate_barcode_b64(number)
+        barcode_img = f'<img src="data:image/png;base64,{barcode_b64}" alt="Rewards Card barcode" style="width:100%;max-width:320px;height:66px;object-fit:fill;image-rendering:pixelated;">'
+    except:
+        barcode_img = '<p style="color:#e05252;font-size:13px;">Could not generate barcode</p>'
+
+    add_link = ""
+    if len(cards) < 2:
+        add_link = f'<a href="/rewards/add" style="display:inline-block;margin-top:6px;font-size:12px;color:{muted};text-decoration:underline;">+ Add another card</a><br>'
+
+    return f"""
+    <div style="background:white;border:2px solid {border};border-radius:{radius};padding:16px;margin-bottom:24px;text-align:center;">
+      {tabs_html}
+      <div style="font-family:'Righteous',sans-serif;font-size:13px;color:{muted};letter-spacing:1px;margin-bottom:8px;">{name.upper()}</div>
+      <a href="/rewards/edit/{active}">{barcode_img}</a>
+      <div style="font-size:13px;color:{muted};margin-top:6px;letter-spacing:3px;">{display}</div>
+      {add_link}
+    </div>"""
 
 CATEGORY_ICONS = {
     "Fruit & Veg": "🥦",
@@ -764,14 +795,23 @@ def flybuys_edit():
         raw = request.form.get("flybuys_number","")
         number = "".join(c for c in raw if c.isdigit())
         if number == "0":
-            save_flybuys(username, "")
-            return redirect("/")
+            cards, active = load_rewards_cards(username)
+            if 0 <= active < len(cards):
+                cards.pop(active)
+                save_rewards_cards(username, cards)
+            return redirect("/shop")
         if len(number) < 8:
-            error = "Please enter a valid Rewards Card number (at least 8 digits) or type 0 to clear."
+            error = "Please enter a valid Rewards Card number (at least 8 digits)."
         else:
             try:
                 generate_barcode_b64(number)  # validate it works
                 save_flybuys(username, number)
+                cards, active = load_rewards_cards(username)
+                if cards:
+                    cards[0] = {"name": cards[0].get("name", "Flybuys"), "number": number}
+                else:
+                    cards = [{"name": "Flybuys", "number": number}]
+                save_rewards_cards(username, cards)
                 return redirect("/")
             except:
                 error = "Could not generate a barcode for that number. Please check and try again."
@@ -814,6 +854,135 @@ def flybuys_edit():
 </div>
 </body></html>"""
 
+@app.route("/rewards/edit")
+def rewards_edit_redirect():
+    return redirect("/rewards/edit/0")
+
+@app.route("/rewards/select/<int:index>")
+def select_reward_card(index):
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    set_active_card(username, index)
+    return redirect("/shop")
+
+@app.route("/rewards/add", methods=["GET", "POST"])
+def add_reward_card():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    cards, active = load_rewards_cards(username)
+    error = ""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        raw = request.form.get("number", "")
+        number = "".join(c for c in raw if c.isdigit())
+        if number == "0":
+            cards, active = load_rewards_cards(username)
+            if 0 <= active < len(cards):
+                cards.pop(active)
+            save_rewards_cards(username, cards)
+            return redirect("/shop")
+        if len(number) < 8:
+            error = "Please enter a valid card number (at least 8 digits)."
+        else:
+            try:
+                generate_barcode_b64(number)
+                if name and number:
+                    cards.append({"name": name, "number": number})
+                    save_rewards_cards(username, cards)
+                    set_active_card(username, len(cards) - 1)
+                return redirect("/shop")
+            except:
+                error = "Could not generate a barcode for that number. Please check and try again."
+    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><title>Add Rewards Card</title>{BASE_HEAD}</head>
+<body><div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:20px;">💳 Add Rewards Card</h1>
+  <div style="width:100%;max-width:360px;">
+  <form method="post">
+    <input type="text" name="name" placeholder="Card name (e.g. Woolworths)" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;">
+    <input type="text" name="number" placeholder="Card number (type 0 to clear)" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:4px;box-sizing:border-box;">
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+      Spaces and dashes are fine — just type the number on your card or type 0 to clear.
+    </p>
+
+    <div style="margin-bottom:16px;">
+      {error_html}
+    </div>
+    <button type="submit"
+      style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+             background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;">
+      Save Card
+    </button>
+  </form>
+  </div>
+  <a href="/shop" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:14px;">Cancel</a>
+</div></body></html>"""
+
+@app.route("/rewards/edit/<int:index>", methods=["GET", "POST"])
+def edit_reward_card(index):
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    cards, active = load_rewards_cards(username)
+    if index >= len(cards):
+        return redirect("/rewards/add")
+    error = ""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        raw = request.form.get("number", "")
+        number = "".join(c for c in raw if c.isdigit())
+        if number == "0":
+            cards.pop(index)
+            save_rewards_cards(username, cards)
+            return redirect("/shop")
+        if len(number) < 8:
+            error = "Please enter a valid card number (at least 8 digits)."
+        else:
+            try:
+                generate_barcode_b64(number)
+                cards[index] = {"name": name, "number": number}
+                save_rewards_cards(username, cards)
+                return redirect("/shop")
+            except:
+                error = "Could not generate a barcode for that number. Please check and try again."
+    card = cards[index]
+    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><title>Edit Rewards Card</title>{BASE_HEAD}</head>
+<body><div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:20px;">💳 Edit Rewards Card</h1>
+  <div style="width:100%;max-width:360px;">
+  <form method="post">
+    <input type="text" name="name" value="{card['name']}" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;">
+    <input type="text" name="number" value="{card['number']}" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:4px;box-sizing:border-box;">
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Spaces and dashes are fine — just type the number on your card or type 0 to clear.</p>
+    {error_html}
+    <button type="submit"
+      style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+             background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;">
+      Save Changes
+    </button>
+  </form>
+  </div>
+  <a href="/shop" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:14px;">Cancel</a>
+</div></body></html>"""
 # --- Home ---
 
 @app.route("/")
