@@ -1125,7 +1125,6 @@ def home():
   }}
 
   function previewPhoto(input) {{
-  function previewPhoto(input) {{
     const p = document.getElementById('preview');
     if (input.files && input.files[0]) {{
       const r = new FileReader();
