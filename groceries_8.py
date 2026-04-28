@@ -1502,8 +1502,19 @@ function openUserMenu() {{
       }})
       .catch(err => console.error('Error:', err));
   }}
+  let isTyping = false;
+  let typingTimer;
 
+  document.getElementById('item-input').addEventListener('input', () => {{
+    isTyping = true;
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {{
+      isTyping = false;
+    }}, 3000);
+  }});
+  
   setInterval(() => {{
+    if (isTyping) return;
     fetch('/items')
       .then(r => r.json())
       .then(data => {{
