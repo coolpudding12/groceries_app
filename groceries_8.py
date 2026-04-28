@@ -1083,7 +1083,7 @@ def home():
       ×
     </button>
   </div>
-  <ul>{list_html}</ul>
+  <ul id="main-list" data-count="{len(items)}">{list_html}</ul>
   {shop_btn}
 
 </div>
@@ -1120,8 +1120,11 @@ def home():
 
 <script>
   let lastItemCount = document.querySelectorAll('ul li').length;
+  const itemCount = parseInt(document.getElementById('main-list').dataset.count);
   if (sessionStorage.getItem('hintDismissed') === 'true') {{
     document.getElementById('shop-hint').style.display = 'none';
+  }} else if (itemCount > 0) {{
+    document.getElementById('shop-hint').style.display = 'flex';
   }}
 
   function previewPhoto(input) {{
@@ -1309,7 +1312,9 @@ function openUserMenu() {{
           if (sessionStorage.getItem('hintDismissed') !== 'true') {{
             hint.style.display = 'flex';
           }}
-          const ul = document.querySelector('ul');
+          const mainList = document.getElementById('main-list');
+          mainList.dataset.count = parseInt(mainList.dataset.count) + 1;
+          const ul = document.getElementById('main-list');
           const li = document.createElement('li');
           li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);';
           li.innerHTML = `<span style="flex:1;font-size:17px;font-weight:600;">${{data.item.name}}</span>
