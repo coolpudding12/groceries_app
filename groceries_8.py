@@ -1077,7 +1077,7 @@ def home():
         Swipe below to get your organised list
       </p>
     </div>
-    <button onclick="const h=document.getElementById('shop-hint');h.style.display='none';h.dataset.dismissed='true';"
+    <button onclick="const h=document.getElementById('shop-hint');h.style.display='none';sessionStorage.setItem('hintDismissed','true');"
       style="background:none;border:none;color:white;font-size:20px;cursor:pointer;
              opacity:0.7;padding:0;line-height:1;flex-shrink:0;">
       ×
@@ -1119,6 +1119,11 @@ def home():
 </div>
 
 <script>
+  if (sessionStorage.getItem('hintDismissed') === 'true') {{
+    document.getElementById('shop-hint').style.display = 'none';
+  }}
+
+  function previewPhoto(input) {{
   function previewPhoto(input) {{
     const p = document.getElementById('preview');
     if (input.files && input.files[0]) {{
@@ -1304,7 +1309,7 @@ function openUserMenu() {{
         if (data.status === 'ok') {{
           lastItemCount += 1;
           const hint = document.getElementById('shop-hint');
-          if (hint.dataset.dismissed !== 'true') {{
+          if (sessionStorage.getItem('hintDismissed') !== 'true') {{
             hint.style.display = 'flex';
           }}
           const ul = document.querySelector('ul');
