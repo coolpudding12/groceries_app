@@ -883,7 +883,7 @@ def home():
                   animation:pulse-border 2s ease-in-out infinite;">
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
                     font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
-                    opacity:0.6;user-select:none;pointer-events:none;padding-left:64px;">
+                    opacity:0.6;user-select:none;pointer-events:none;">
           Swipe to start shopping →
         </div>
         <div id="shop-slider"
@@ -1042,26 +1042,25 @@ def home():
 
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:18px;margin-bottom:20px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-    <form action="/add" method="post" enctype="multipart/form-data">
-      <input type="text" name="item" maxlength="40" placeholder="What do you need?" required
-        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
-               border:2px solid var(--border);border-radius:10px;background:var(--cream);
-               color:var(--text);outline:none;margin-bottom:12px;transition:border-color 0.2s;"
-        onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-        <label style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap;">📷 Add photo</label>
-        <input type="file" name="photo" accept="image/*" onchange="previewPhoto(this)"
-          style="font-size:13px;color:var(--muted);flex:1;min-width:0;">
-        <img id="preview" style="width:48px;height:48px;object-fit:cover;border-radius:8px;display:none;border:2px solid var(--border);">
-      </div>
-      <button type="submit"
-        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;font-weight:600;
-               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
-               box-shadow:0 4px 12px rgba(58,125,68,0.3);"
-        onmousedown="this.style.transform='scale(0.98)'" onmouseup="this.style.transform='scale(1)'">
-        + Add to list
-      </button>
-    </form>
+    <input type="text" id="item-input" maxlength="40" placeholder="What do you need?"
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:12px;transition:border-color 0.2s;"
+      onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
+      onkeydown="if(event.key==='Enter'){{event.preventDefault();addItem();}}">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <label style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap;">📷 Add photo</label>
+      <input type="file" id="photo-input" name="photo" accept="image/*" onchange="previewPhoto(this)"
+        style="font-size:13px;color:var(--muted);flex:1;min-width:0;">
+      <img id="preview" style="width:48px;height:48px;object-fit:cover;border-radius:8px;display:none;border:2px solid var(--border);">
+    </div>
+    <button onclick="addItem()"
+      style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;font-weight:600;
+             background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+             box-shadow:0 4px 12px rgba(58,125,68,0.3);"
+      onmousedown="this.style.transform='scale(0.98)'" onmouseup="this.style.transform='scale(1)'">
+      + Add to list
+    </button>
   </div>
 
   {undo_html}
@@ -1286,6 +1285,61 @@ function openUserMenu() {{
       }});
     }}, 100);
   }}
+  function addItem() {{
+    const input = document.getElementById('item-input');
+    const name = input.value.trim();
+    if (!name) return;
+
+    const form = new FormData();
+    form.append('item', name);
+
+    const photoInput = document.getElementById('photo-input');
+    if (photoInput.files[0]) {{
+      form.append('photo', photoInput.files[0]);
+    }}
+
+    fetch('/add', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok') {{
+          lastItemCount += 1;
+          // Add item to list instantly
+          const ul = document.querySelector('ul');
+          const li = document.createElement('li');
+          li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);';
+          li.innerHTML = `<span style="flex:1;font-size:17px;font-weight:600;">${{data.item.name}}</span>
+            <a href="/delete/${{document.querySelectorAll('ul li').length}}" style="color:var(--red);font-size:22px;line-height:1;margin-left:10px;opacity:0.7;">×</a>`;
+          ul.appendChild(li);
+
+          // Clear input
+          input.value = '';
+          document.getElementById('photo-input').value = '';
+          document.getElementById('preview').style.display = 'none';
+
+          // Update count text
+          const count = document.querySelectorAll('ul li').length;
+          lastItemCount = count;
+          const countEl = document.querySelector('p[style*="text-transform:uppercase"]');
+          if (countEl) countEl.textContent = count + ' ITEM' + (count !== 1 ? 'S' : '') + ' ON YOUR LIST'
+        }} else {{
+          alert(data.message);
+        }}
+      }})
+      .catch(err => console.error('Error:', err));
+  }}
+    let lastItemCount = document.querySelectorAll('ul li').length;
+
+  setInterval(() => {{
+    fetch('/items')
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok' && data.items.length !== lastItemCount) {{
+          lastItemCount = data.items.length;
+          location.reload();
+        }}
+      }})
+        .catch(err => console.log('Poll error:', err));
+    }}, 15000);
 </script>
 </body></html>"""
 
@@ -1409,7 +1463,7 @@ def shop():
         ✅ Tick items as you add them to your cart
       </p>
       <p style="font-size:13px;color:var(--muted);margin:0;">
-        ⋮ Long press on an item to change its aisle
+            Long press on an item to change its aisle
       </p>
     </div>
     <button onclick="document.getElementById('shop-tips').style.display='none'"
@@ -1498,7 +1552,7 @@ def shop():
                   animation:pulse-border-orange 2s ease-in-out infinite;">
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
                     font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
-                    opacity:0.6;user-select:none;pointer-events:none;padding-left:64px;">
+                    opacity:0.6;user-select:none;pointer-events:none;">
           Swipe to finish & clear list→
         </div>
         <div id="finish-slider"
@@ -1519,23 +1573,6 @@ def shop():
 <script>
   const ticked = new Set();
   let shopStartTime = null;
-
-  // Keep screen awake while shopping
-  let wakeLock = null;
-  async function requestWakeLock() {{
-    try {{
-      wakeLock = await navigator.wakeLock.request('screen');
-    }} catch (err) {{
-      console.log('Wake lock not supported:', err);
-    }}
-  }}
-  requestWakeLock();
-
-  document.addEventListener('visibilitychange', () => {{
-    if (document.visibilityState === 'visible') {{
-      requestWakeLock();
-    }}
-  }});
 
   shopStartTime = sessionStorage.getItem('shopStartTime');
 
@@ -1720,19 +1757,6 @@ def shop():
     const itemId = itemEl.dataset.id;
     const itemName = itemEl.dataset.name;
     const currentCategory = itemEl.dataset.category;
-    const categoryEmojis = {{
-      "Fruit & Veg": "🥦",
-      "Meat & Fish": "🥩",
-      "Dairy & Eggs": "🧀",
-      "Bakery": "🍞",
-      "Pantry": "🥫",
-      "Drinks": "🧃",
-      "Snacks": "🍫",
-      "Household": "🧹",
-      "Frozen": "🧊",
-      "Other": "👾"
-    }};
-
     const categories = ["Fruit & Veg","Meat & Fish","Dairy & Eggs","Bakery","Pantry","Drinks","Snacks","Household","Frozen","Other"];
 
     const menu = document.createElement('div');
@@ -1744,7 +1768,7 @@ def shop():
 
     categories.forEach(cat => {{
       const btn = document.createElement('button');
-      btn.textContent = `${{categoryEmojis[cat] || ''}} ${{cat}}`;
+      btn.textContent = cat;
       btn.style.cssText = `display:block;width:100%;padding:8px 12px;text-align:left;
         background:${{cat === currentCategory ? 'var(--green)' : 'transparent'}};
         color:${{cat === currentCategory ? 'white' : 'var(--text)'}};
@@ -1891,7 +1915,6 @@ def shop():
 </body></html>"""
 
 # --- Save score and leaderboard ---
-
 @app.route("/save_score", methods=["POST"])
 def save_score():
     redir = require_user()
@@ -1932,26 +1955,23 @@ def get_leaderboard():
 def add():
     redir = require_user()
     if redir: return redir
-
     username = current_user()
     name = request.form.get("item", "").strip()
     if not name:
-        return redirect("/")
-
+        return {"status": "error", "message": "No item name"}, 400
     photo_path = None
     photo = request.files.get("photo")
-
     if photo and photo.filename:
         ext = os.path.splitext(photo.filename)[1].lower()
         if ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
             photo_path = upload_photo(username, photo)
     items = load_items(username)
-    if len(items)>= MAX_ITEMS:
-        return "List is full. Maximum 200 items allowed.", 400
-    items.append({"name": name, "photo": photo_path})
-
+    if len(items) >= MAX_ITEMS:
+        return {"status": "error", "message": "List is full. Maximum 200 items allowed."}, 400
+    new_item = {"name": name, "photo": photo_path}
+    items.append(new_item)
     save_items(username, items)
-    return redirect("/")
+    return {"status": "ok", "item": new_item}, 200
 
 # --- Delete / undo ---
 
@@ -2100,6 +2120,14 @@ def update_category():
     }).execute()
 
     return {"status": "ok"}, 200
+
+@app.route("/items")
+def get_items():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    items = load_items(username)
+    return {"status": "ok", "items": items}, 200
 
 # --- Export ---
 
