@@ -1119,6 +1119,7 @@ def home():
 </div>
 
 <script>
+  let lastItemCount = document.querySelectorAll('ul li').length;
   if (sessionStorage.getItem('hintDismissed') === 'true') {{
     document.getElementById('shop-hint').style.display = 'none';
   }}
@@ -1294,15 +1295,12 @@ function openUserMenu() {{
     const input = document.getElementById('item-input');
     const name = input.value.trim();
     if (!name) return;
-
     const form = new FormData();
     form.append('item', name);
-
     const photoInput = document.getElementById('photo-input');
     if (photoInput.files[0]) {{
       form.append('photo', photoInput.files[0]);
     }}
-
     fetch('/add', {{ method: 'POST', body: form }})
       .then(r => r.json())
       .then(data => {{
@@ -1318,24 +1316,19 @@ function openUserMenu() {{
           li.innerHTML = `<span style="flex:1;font-size:17px;font-weight:600;">${{data.item.name}}</span>
             <a href="/delete/${{document.querySelectorAll('ul li').length}}" style="color:var(--red);font-size:22px;line-height:1;margin-left:10px;opacity:0.7;">×</a>`;
           ul.appendChild(li);
-
-          // Clear input
           input.value = '';
           document.getElementById('photo-input').value = '';
           document.getElementById('preview').style.display = 'none';
-
-          // Update count text
           const count = document.querySelectorAll('ul li').length;
           lastItemCount = count;
           const countEl = document.querySelector('p[style*="text-transform:uppercase"]');
-          if (countEl) countEl.textContent = count + ' ITEM' + (count !== 1 ? 'S' : '') + ' ON YOUR LIST'
+          if (countEl) countEl.textContent = count + ' ITEM' + (count !== 1 ? 'S' : '') + ' ON YOUR LIST';
         }} else {{
           alert(data.message);
         }}
       }})
       .catch(err => console.error('Error:', err));
   }}
-    let lastItemCount = document.querySelectorAll('ul li').length;
 
   setInterval(() => {{
     fetch('/items')
@@ -1346,8 +1339,8 @@ function openUserMenu() {{
           location.reload();
         }}
       }})
-        .catch(err => console.log('Poll error:', err));
-    }}, 15000);
+      .catch(err => console.log('Poll error:', err));
+  }}, 15000);
 </script>
 </body></html>"""
 
