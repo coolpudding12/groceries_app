@@ -1067,7 +1067,7 @@ def home():
   <p style="font-size:13px;color:var(--muted);font-weight:600;margin:16px 0 12px;text-transform:uppercase;letter-spacing:0.5px;">{count_text}</p>
   <div id="shop-hint" style="background:linear-gradient(135deg,var(--green),var(--green2));
               border-radius:12px;padding:10px 14px;margin-bottom:16px;
-              display:flex;align-items:center;gap:12px;">
+              align-items:center;gap:12px;display:none;">
     <span style="font-size:20px;">🥦</span>
     <div style="flex:1;">
       <p style="font-family:'Righteous',sans-serif;font-size:14px;color:white;margin:0 0 2px;">
@@ -1303,7 +1303,7 @@ function openUserMenu() {{
       .then(data => {{
         if (data.status === 'ok') {{
           lastItemCount += 1;
-          // Add item to list instantly
+          document.getElementById('shop-hint').style.display = 'flex';
           const ul = document.querySelector('ul');
           const li = document.createElement('li');
           li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);';
