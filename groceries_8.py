@@ -1077,7 +1077,7 @@ def home():
         Swipe below to get your organised list
       </p>
     </div>
-    <button onclick="document.getElementById('shop-hint').style.display='none'"
+    <button onclick="const h=document.getElementById('shop-hint');h.style.display='none';h.dataset.dismissed='true';"
       style="background:none;border:none;color:white;font-size:20px;cursor:pointer;
              opacity:0.7;padding:0;line-height:1;flex-shrink:0;">
       ×
@@ -1303,7 +1303,10 @@ function openUserMenu() {{
       .then(data => {{
         if (data.status === 'ok') {{
           lastItemCount += 1;
-          document.getElementById('shop-hint').style.display = 'flex';
+          const hint = document.getElementById('shop-hint');
+          if (hint.dataset.dismissed !== 'true') {{
+            hint.style.display = 'flex';
+          }}
           const ul = document.querySelector('ul');
           const li = document.createElement('li');
           li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);';
