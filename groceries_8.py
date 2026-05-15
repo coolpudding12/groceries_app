@@ -9,6 +9,26 @@ from datetime import timedelta
 import hashlib
 from dotenv import load_dotenv
 load_dotenv()
+from cryptography.fernet import Fernet
+
+ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
+fernet = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+
+def encrypt_value(value):
+    if not value or not fernet:
+        return value
+    return fernet.encrypt(value.encode()).decode()
+
+def decrypt_value(value):
+    if not value or not fernet:
+        return value
+    try:
+        decrypted = fernet.decrypt(value.encode()).decode()
+        print(f"Decrypted value: {decrypted}")
+        return decrypted
+    except:
+        print(f"Decryption failed for: {value[:20]}...")
+        return value
 
 app = Flask(__name__)
 app.secret_key = "tacobell"
@@ -38,19 +58,19 @@ def generate_barcode_b64(number):
     })
     return base64.b64encode(buf.getvalue()).decode()
 
-def flybuys_file(username):
-    return f"rewards_{safe_username(username)}.json"
-
-def load_flybuys(username):
-    result = supabase.table("users").select("flybuys").eq("username", username).execute()
+def load_rewards_cards(username):
+    result = supabase.table("users").select("rewards_cards, active_card").eq("username", username).execute()
     if result.data:
-        return result.data[0].get("flybuys", "")
-    return ""
+        cards = result.data[0].get("rewards_cards") or []
+        active = result.data[0].get("active_card") or 0
+        return cards, active
+    return [], 0
 
+def save_rewards_cards(username, cards):
+    supabase.table("users").update({"rewards_cards": cards}).eq("username", username).execute()
 
-def save_flybuys(username, number):
-    supabase.table("users").update({"flybuys": number}).eq("username", username).execute()
-
+def set_active_card(username, index):
+    supabase.table("users").update({"active_card": index}).eq("username", username).execute()
 
 def format_flybuys_display(number):
     # Format raw digits nicely e.g. 27932023822170 -> 2793 2023 8221 70
@@ -59,34 +79,57 @@ def format_flybuys_display(number):
     return " ".join(parts)
 
 def get_flybuys_card_html(username, css_vars=True):
-    """Returns flybuys card HTML, or an 'add card' prompt if not set."""
-    number = load_flybuys(username)
+    cards, active = load_rewards_cards(username)
     border = "var(--border)" if css_vars else "#e8e0d4"
     radius = "var(--radius)" if css_vars else "14px"
     muted = "var(--muted)" if css_vars else "#8a8070"
 
-    if number:
-        display = format_flybuys_display(number)
-        try:
-            barcode_b64 = generate_barcode_b64(number)
-            barcode_img = f'<img src="data:image/png;base64,{barcode_b64}" alt="Rewards Card barcode" style="width:100%;max-width:320px;height:66px;object-fit:fill;image-rendering:pixelated;">'
-        except:
-            barcode_img = '<p style="color:#e05252;font-size:13px;">Could not generate barcode</p>'
+
+    if not cards:
         return f"""
-        <div style="background:white;border:2px solid {border};border-radius:{radius};padding:16px;margin-bottom:24px;text-align:center;">
-          <div style="font-family:\'Righteous\',sans-serif;font-size:13px;color:{muted};letter-spacing:1px;margin-bottom:8px;">REWARDS</div>
-          {barcode_img}
-          <div style="font-size:13px;color:{muted};margin-top:6px;letter-spacing:3px;">{display}</div>
-          <a href="/flybuys/edit" style="display:inline-block;margin-top:10px;font-size:12px;color:{muted};text-decoration:underline;">Change number</a>
-        </div>"""
-    else:
-        return f"""
-        <a href="/flybuys/edit" style="display:block;background:white;border:2px dashed {border};border-radius:{radius};
+        <a href="/rewards/add" style="display:block;background:white;border:2px dashed {border};border-radius:{radius};
            padding:16px;margin-bottom:24px;text-align:center;color:{muted};">
           <div style="font-size:24px;margin-bottom:6px;">💳</div>
-          <div style="font-family:\'Righteous\',sans-serif;font-size:15px;">Add Rewards Card</div>
+          <div style="font-family:'Righteous',sans-serif;font-size:15px;">Add Rewards Card</div>
           <div style="font-size:12px;margin-top:4px;">Tap to enter your number</div>
         </a>"""
+
+    # Clamp active index
+    if active >= len(cards):
+        active = 0
+
+    card = cards[active]
+    number = decrypt_value(card.get("number", ""))
+    name = card.get("name", "Rewards Card")
+
+    # Tab switcher if more than one card
+    tabs_html = ""
+    if len(cards) > 1:
+        tabs = ""
+        for i, c in enumerate(cards):
+            selected = "background:var(--green);color:white;" if i == active else "background:var(--cream);color:var(--text);"
+            tabs += f'<a href="/rewards/select/{i}" style="flex:1;padding:8px;text-align:center;border-radius:8px;font-family:\'Righteous\',sans-serif;font-size:13px;{selected}text-decoration:none;">{c["name"]}</a>'
+        tabs_html = f'<div style="display:flex;gap:6px;margin-bottom:12px;">{tabs}</div>'
+
+    display = format_flybuys_display(number)
+    try:
+        barcode_b64 = generate_barcode_b64(number)
+        barcode_img = f'<img src="data:image/png;base64,{barcode_b64}" alt="Rewards Card barcode" style="width:100%;max-width:320px;height:66px;object-fit:fill;image-rendering:pixelated;">'
+    except:
+        barcode_img = '<p style="color:#e05252;font-size:13px;">Could not generate barcode</p>'
+
+    add_link = ""
+    if len(cards) < 2:
+        add_link = f'<a href="/rewards/add" style="display:inline-block;margin-top:6px;font-size:12px;color:{muted};text-decoration:underline;">+ Add another card</a><br>'
+
+    return f"""
+    <div style="background:white;border:2px solid {border};border-radius:{radius};padding:16px;margin-bottom:24px;text-align:center;">
+      {tabs_html}
+      <div style="font-family:'Righteous',sans-serif;font-size:13px;color:{muted};letter-spacing:1px;margin-bottom:8px;">{name.upper()}</div>
+      <a href="/rewards/edit/{active}">{barcode_img}</a>
+      <div style="font-size:13px;color:{muted};margin-top:6px;letter-spacing:3px;">{display}</div>
+      {add_link}
+    </div>"""
 
 CATEGORY_ICONS = {
     "Fruit & Veg": "🥦",
@@ -186,17 +229,17 @@ def ensure_user_exists(username, pin=None):
             "username": username,
             "items": [],
             "misc": [],
-            "pin": hashlib.sha256(pin.encode()).hexdigest() if pin else None
+            "pin": encrypt_value(pin) if pin else None,
+            "pin_set": bool(pin)
         }).execute()
 
 def check_pin(username, pin):
     result = supabase.table("users").select("pin").eq("username", username).execute()
-    if not result.data:
-        return False
-    stored_pin = result.data [0].get("pin")
-    if not stored_pin:
-        return True
-    return stored_pin == hashlib.sha256(pin.encode()).hexdigest()
+    if result.data:
+        stored = result.data[0].get("pin")
+        if stored:
+            return decrypt_value(stored) == pin
+    return False
 
 def user_exists(username):
     result = supabase.table("users").select("id").eq("username", username).execute()
@@ -437,7 +480,7 @@ def login():
             pin_display = ""
             if pin:
                 pin_display = " · ".join(pin.split("-"))
-                supabase.table("users").update({"pin_display": pin_display}).eq("username", username).execute()
+                
             return {
                 "status": "created",
                 "username": raw_username,
@@ -742,12 +785,11 @@ def set_pin():
     if not pin:
         return {"status": "error", "message": "No PIN provided."}, 200
 
-    hashed = hashlib.sha256(pin.encode()).hexdigest()  # use whatever hashing function you already use
+    encrypted = encrypt_value(pin)
     pin_display = " · ".join(pin.split("-"))
     supabase.table("users").update({
-        "pin": hashed,
+        "pin": encrypted,
         "pin_set": True,
-        "pin_display": pin_display
     }).eq("username", username).execute()
 
     return {"status": "ok", "pin_display": pin_display}, 200
@@ -763,15 +805,26 @@ def flybuys_edit():
     if request.method == "POST":
         raw = request.form.get("flybuys_number","")
         number = "".join(c for c in raw if c.isdigit())
+        number = encrypt_value(number)
         if number == "0":
-            save_flybuys(username, "")
-            return redirect("/")
+            cards, active = load_rewards_cards(username)
+            if 0 <= active < len(cards):
+                cards.pop(active)
+                save_rewards_cards(username, cards)
+            return redirect("/shop")
         if len(number) < 8:
-            error = "Please enter a valid Rewards Card number (at least 8 digits) or type 0 to clear."
+            error = "Please enter a valid Rewards Card number (at least 8 digits)."
         else:
             try:
-                generate_barcode_b64(number)  # validate it works
-                save_flybuys(username, number)
+                generate_barcode_b64(number)
+                encrypted = encrypt_value(number)
+                save_flybuys(username, encrypted)
+                cards, active = load_rewards_cards(username)
+                if cards:
+                    cards[0] = {"name": cards[0].get("name", "Flybuys"), "number": number}
+                else:
+                    cards = [{"name": "Flybuys", "number": number}]
+                save_rewards_cards(username, cards)
                 return redirect("/")
             except:
                 error = "Could not generate a barcode for that number. Please check and try again."
@@ -814,6 +867,138 @@ def flybuys_edit():
 </div>
 </body></html>"""
 
+@app.route("/rewards/edit")
+def rewards_edit_redirect():
+    return redirect("/rewards/edit/0")
+
+@app.route("/rewards/select/<int:index>")
+def select_reward_card(index):
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    set_active_card(username, index)
+    return redirect("/shop")
+
+@app.route("/rewards/add", methods=["GET", "POST"])
+def add_reward_card():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    cards, active = load_rewards_cards(username)
+    error = ""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        raw = request.form.get("number", "")
+        number = "".join(c for c in raw if c.isdigit())
+        if number == "0":
+            cards, active = load_rewards_cards(username)
+            if 0 <= active < len(cards):
+                cards.pop(active)
+            save_rewards_cards(username, cards)
+            return redirect("/shop")
+        if len(number) < 8:
+            error = "Please enter a valid card number (at least 8 digits)."
+        else:
+            try:
+                generate_barcode_b64(number)
+                number = encrypt_value(number)
+                if name and number:
+                    cards.append({"name": name, "number": number})
+                    save_rewards_cards(username, cards)
+                    set_active_card(username, len(cards) - 1)
+                return redirect("/shop")
+            except:
+                error = "Could not generate a barcode for that number. Please check and try again."
+    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><title>Add Rewards Card</title>{BASE_HEAD}</head>
+<body><div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:20px;">💳 Add Rewards Card</h1>
+  <div style="width:100%;max-width:360px;">
+  <form method="post">
+    <input type="text" name="name" placeholder="Card name (e.g. Woolworths)" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;">
+    <input type="text" name="number" placeholder="Card number (type 0 to clear)" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:4px;box-sizing:border-box;">
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+      Spaces and dashes are fine — just type the number on your card or type 0 to clear.
+    </p>
+
+    <div style="margin-bottom:16px;">
+      {error_html}
+    </div>
+    <button type="submit"
+      style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+             background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;">
+      Save Card
+    </button>
+  </form>
+  </div>
+  <a href="/shop" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:14px;">Cancel</a>
+</div></body></html>"""
+
+@app.route("/rewards/edit/<int:index>", methods=["GET", "POST"])
+def edit_reward_card(index):
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    cards, active = load_rewards_cards(username)
+    if index >= len(cards):
+        return redirect("/rewards/add")
+    error = ""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        raw = request.form.get("number", "")
+        number = "".join(c for c in raw if c.isdigit())
+        if number == "0":
+            cards.pop(index)
+            save_rewards_cards(username, cards)
+            return redirect("/shop")
+        if len(number) < 8:
+            error = "Please enter a valid card number (at least 8 digits)."
+        else:
+            try:
+                generate_barcode_b64(number)
+                number = encrypt_value(number)  # encrypt once, after validation
+                cards[index] = {"name": name, "number": number}
+                save_rewards_cards(username, cards)
+                return redirect("/shop")
+            except:
+                error = "Could not generate a barcode for that number. Please check and try again."
+    card = cards[index]
+    decrypted_number = decrypt_value(card.get("number", ""))
+    error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><title>Edit Rewards Card</title>{BASE_HEAD}</head>
+<body><div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:20px;">💳 Edit Rewards Card</h1>
+  <div style="width:100%;max-width:360px;">
+  <form method="post">
+    <input type="text" name="name" value="{card['name']}" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;">
+    <input type="text" name="number" value="{decrypted_number}" required
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:4px;box-sizing:border-box;">
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Spaces and dashes are fine — type 0 to remove this card.</p>
+    {error_html}
+    <button type="submit"
+      style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+             background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;">
+      Save Changes
+    </button>
+  </form>
+  </div>
+  <a href="/shop" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:14px;">Cancel</a>
+</div></body></html>"""
 # --- Home ---
 
 @app.route("/")
@@ -825,10 +1010,11 @@ def home():
     items = load_items(username)
     duplicates = find_duplicates(items)
     last_deleted = session.get("last_deleted", None)
-    result = supabase.table("users").select("pin, pin_display").eq("username", username).execute()
+    result = supabase.table("users").select("pin, pin_set").eq("username", username).execute()
     user_data = result.data[0] if result.data else {}
     has_pin = bool(user_data.get("pin"))
-    pin_display = user_data.get("pin_display") or ""
+    pin = decrypt_value(user_data.get("pin", ""))
+    pin_display = " · ".join(pin.split("-")) if pin else ""
 
     list_html = ""
     for i, item in enumerate(items):
@@ -1042,33 +1228,32 @@ def home():
 
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:18px;margin-bottom:20px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
-    <form action="/add" method="post" enctype="multipart/form-data">
-      <input type="text" name="item" maxlength="40" placeholder="What do you need?" required
-        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
-               border:2px solid var(--border);border-radius:10px;background:var(--cream);
-               color:var(--text);outline:none;margin-bottom:12px;transition:border-color 0.2s;"
-        onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-        <label style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap;">📷 Add photo</label>
-        <input type="file" name="photo" accept="image/*" onchange="previewPhoto(this)"
-          style="font-size:13px;color:var(--muted);flex:1;min-width:0;">
-        <img id="preview" style="width:48px;height:48px;object-fit:cover;border-radius:8px;display:none;border:2px solid var(--border);">
-      </div>
-      <button type="submit"
-        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;font-weight:600;
-               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
-               box-shadow:0 4px 12px rgba(58,125,68,0.3);"
-        onmousedown="this.style.transform='scale(0.98)'" onmouseup="this.style.transform='scale(1)'">
-        + Add to list
-      </button>
-    </form>
+    <input type="text" id="item-input" maxlength="40" placeholder="What do you need?"
+      style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+             border:2px solid var(--border);border-radius:10px;background:var(--cream);
+             color:var(--text);outline:none;margin-bottom:12px;transition:border-color 0.2s;"
+      onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
+      onkeydown="if(event.key==='Enter'){{event.preventDefault();addItem();}}">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <label style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap;">📷 Add photo</label>
+      <input type="file" id="photo-input" name="photo" accept="image/*" onchange="previewPhoto(this)"
+        style="font-size:13px;color:var(--muted);flex:1;min-width:0;">
+      <img id="preview" style="width:48px;height:48px;object-fit:cover;border-radius:8px;display:none;border:2px solid var(--border);">
+    </div>
+    <button onclick="addItem()"
+      style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;font-weight:600;
+             background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+             box-shadow:0 4px 12px rgba(58,125,68,0.3);"
+      onmousedown="this.style.transform='scale(0.98)'" onmouseup="this.style.transform='scale(1)'">
+      + Add to list
+    </button>
   </div>
 
   {undo_html}
   <p style="font-size:13px;color:var(--muted);font-weight:600;margin:16px 0 12px;text-transform:uppercase;letter-spacing:0.5px;">{count_text}</p>
   <div id="shop-hint" style="background:linear-gradient(135deg,var(--green),var(--green2));
               border-radius:12px;padding:10px 14px;margin-bottom:16px;
-              display:flex;align-items:center;gap:12px;">
+              align-items:center;gap:12px;display:none;">
     <span style="font-size:20px;">🥦</span>
     <div style="flex:1;">
       <p style="font-family:'Righteous',sans-serif;font-size:14px;color:white;margin:0 0 2px;">
@@ -1078,13 +1263,13 @@ def home():
         Swipe below to get your organised list
       </p>
     </div>
-    <button onclick="document.getElementById('shop-hint').style.display='none'"
+    <button onclick="const h=document.getElementById('shop-hint');h.style.display='none';sessionStorage.setItem('hintDismissed','true');"
       style="background:none;border:none;color:white;font-size:20px;cursor:pointer;
              opacity:0.7;padding:0;line-height:1;flex-shrink:0;">
       ×
     </button>
   </div>
-  <ul>{list_html}</ul>
+  <ul id="main-list" data-count="{len(items)}">{list_html}</ul>
   {shop_btn}
 
 </div>
@@ -1120,6 +1305,14 @@ def home():
 </div>
 
 <script>
+  let lastItemCount = document.querySelectorAll('ul li').length;
+  const itemCount = parseInt(document.getElementById('main-list').dataset.count);
+  if (sessionStorage.getItem('hintDismissed') === 'true') {{
+    document.getElementById('shop-hint').style.display = 'none';
+  }} else if (itemCount > 0) {{
+    document.getElementById('shop-hint').style.display = 'flex';
+  }}
+
   function previewPhoto(input) {{
     const p = document.getElementById('preview');
     if (input.files && input.files[0]) {{
@@ -1286,6 +1479,47 @@ function openUserMenu() {{
       }});
     }}, 100);
   }}
+  function addItem() {{
+    const input = document.getElementById('item-input');
+    const name = input.value.trim();
+    if (!name) return;
+    const form = new FormData();
+    form.append('item', name);
+    const photoInput = document.getElementById('photo-input');
+    if (photoInput.files[0]) {{
+      form.append('photo', photoInput.files[0]);
+    }}
+    fetch('/add', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok') {{
+          lastItemCount += 1;
+          const hint = document.getElementById('shop-hint');
+          if (sessionStorage.getItem('hintDismissed') !== 'true') {{
+            hint.style.display = 'flex';
+          }}
+          const mainList = document.getElementById('main-list');
+          mainList.dataset.count = parseInt(mainList.dataset.count) + 1;
+          const ul = document.getElementById('main-list');
+          const li = document.createElement('li');
+          li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);';
+          li.innerHTML = `<span style="flex:1;font-size:17px;font-weight:600;">${{data.item.name}}</span>
+            <a href="/delete/${{document.querySelectorAll('ul li').length}}" style="color:var(--red);font-size:22px;line-height:1;margin-left:10px;opacity:0.7;">×</a>`;
+          ul.appendChild(li);
+          input.value = '';
+          document.getElementById('photo-input').value = '';
+          document.getElementById('preview').style.display = 'none';
+          const count = document.querySelectorAll('ul li').length;
+          lastItemCount = count;
+          const countEl = document.querySelector('p[style*="text-transform:uppercase"]');
+          if (countEl) countEl.textContent = count + ' ITEM' + (count !== 1 ? 'S' : '') + ' ON YOUR LIST';
+        }} else {{
+          alert(data.message);
+        }}
+      }})
+      .catch(err => console.error('Error:', err));
+  }}
+
 </script>
 </body></html>"""
 
@@ -1409,7 +1643,7 @@ def shop():
         ✅ Tick items as you add them to your cart
       </p>
       <p style="font-size:13px;color:var(--muted);margin:0;">
-        ⋮ Long press on an item to change its category
+            Long press on an item to change its aisle
       </p>
     </div>
     <button onclick="document.getElementById('shop-tips').style.display='none'"
@@ -1446,6 +1680,39 @@ def shop():
       </div>
     </div>
   </div>
+  <div id="all-ticked-overlay"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+         z-index:200;justify-content:center;align-items:center;">
+  <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+              width:90%;max-width:360px;text-align:center;
+              box-shadow:0 -4px 30px rgba(0,0,0,0.2);">
+    <p style="font-size:36px;margin:0 0 8px;">🎉</p>
+    <h2 style="font-family:'Righteous',sans-serif;font-size:24px;color:var(--green);margin:0 0 8px;">All done!</h2>
+    <p style="font-size:14px;color:var(--muted);margin:0 0 24px;">You've ticked everything off your list!</p>
+    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                overflow:hidden;border:2px solid #a5d6a7;
+                animation:pulse-border-green 2s ease-in-out infinite;">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                  font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                  opacity:0.6;user-select:none;pointer-events:none;">
+        Swipe to complete →
+      </div>
+      <div id="all-ticked-slider"
+           style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                  background:linear-gradient(135deg,var(--green),var(--green2));
+                  border-radius:26px;cursor:grab;display:flex;align-items:center;
+                  justify-content:center;font-size:22px;
+                  box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+        🥕
+      </div>
+    </div>
+    <button onclick="document.getElementById('all-ticked-overlay').style.display='none'"
+      style="width:100%;margin-top:12px;padding:12px;background:none;border:none;
+             font-size:15px;color:var(--muted);cursor:pointer;">
+      Not yet
+    </button>
+  </div>
+</div>
 </div>
 
 <!-- Results overlay -->
@@ -1520,6 +1787,22 @@ def shop():
   const ticked = new Set();
   let shopStartTime = null;
 
+  let wakeLock = null;
+  async function requestWakeLock() {{
+    try {{
+      wakeLock = await navigator.wakeLock.request('screen');
+    }} catch (err) {{
+      console.log('Wake lock not supported:', err);
+    }}
+  }}
+  requestWakeLock();
+
+  document.addEventListener('visibilitychange', () => {{
+    if (document.visibilityState === 'visible') {{
+      requestWakeLock();
+    }}
+  }});
+
   shopStartTime = sessionStorage.getItem('shopStartTime');
 
   function toggleItem(cb) {{
@@ -1531,6 +1814,15 @@ def shop():
     }} else {{
       ticked.delete(name);
     }}
+    const allItems = document.querySelectorAll('.shop-item input[type="checkbox"]');
+    const allTicked = [...allItems].every(c => c.checked);
+    if (allTicked && allItems.length > 0) {{
+      setTimeout(() => showAllTickedPrompt(), 500);      
+    }}
+  }}
+
+  function showAllTickedPrompt() {{
+    document.getElementById('all-ticked-overlay').style.display = 'flex';
   }}
 
   function formatTime(seconds) {{
@@ -1703,6 +1995,19 @@ def shop():
     const itemId = itemEl.dataset.id;
     const itemName = itemEl.dataset.name;
     const currentCategory = itemEl.dataset.category;
+    const categoryEmojis = {{
+      "Fruit & Veg": "🥦",
+      "Meat & Fish": "🥩",
+      "Dairy & Eggs": "🧀",
+      "Bakery": "🍞",
+      "Pantry": "🥫",
+      "Drinks": "🧃",
+      "Snacks": "🍫",
+      "Household": "🧹",
+      "Frozen": "🧊",
+      "Other": "👾"
+    }};
+
     const categories = ["Fruit & Veg","Meat & Fish","Dairy & Eggs","Bakery","Pantry","Drinks","Snacks","Household","Frozen","Other"];
 
     const menu = document.createElement('div');
@@ -1714,7 +2019,7 @@ def shop():
 
     categories.forEach(cat => {{
       const btn = document.createElement('button');
-      btn.textContent = cat;
+      btn.textContent = `${{categoryEmojis[cat] || ''}} ${{cat}}`;
       btn.style.cssText = `display:block;width:100%;padding:8px 12px;text-align:left;
         background:${{cat === currentCategory ? 'var(--green)' : 'transparent'}};
         color:${{cat === currentCategory ? 'white' : 'var(--text)'}};
@@ -1847,6 +2152,54 @@ def shop():
     window.addEventListener('touchmove', e => move(e.touches[0].clientX));
     window.addEventListener('touchend', end);
   }})();
+  
+    (function() {{
+    const slider = document.getElementById('all-ticked-slider');
+    if (!slider) return;
+    const track = slider.parentElement;
+    let dragging = false;
+    let startX = 0;
+    let currentX = 0;
+    const maxX = () => track.offsetWidth - slider.offsetWidth - 8;
+
+    function start(x) {{
+      dragging = true;
+      startX = x - currentX;
+      slider.style.cursor = 'grabbing';
+    }}
+
+    function move(x) {{
+      if (!dragging) return;
+      currentX = Math.min(Math.max(0, x - startX), maxX());
+      slider.style.left = (4 + currentX) + 'px';
+      const pct = currentX / maxX();
+      track.style.background = `linear-gradient(to right, #c8e6c9 ${{Math.round(pct*100)}}%, #e8f5e9 ${{Math.round(pct*100)}}%)`;
+      if (pct >= 0.95) {{
+        dragging = false;
+        slider.style.left = (4 + maxX()) + 'px';
+        slider.textContent = '🎉';
+        setTimeout(() => showResults(), 400);
+      }}
+    }}
+
+    function end() {{
+      if (!dragging) return;
+      dragging = false;
+      slider.style.cursor = 'grab';
+      currentX = 0;
+      slider.style.transition = 'left 0.3s';
+      slider.style.left = '4px';
+      track.style.background = '#e8f5e9';
+      setTimeout(() => slider.style.transition = '', 300);
+    }}
+
+    slider.addEventListener('mousedown', e => start(e.clientX));
+    window.addEventListener('mousemove', e => move(e.clientX));
+    window.addEventListener('mouseup', end);
+    slider.addEventListener('touchstart', e => {{ e.preventDefault(); start(e.touches[0].clientX); }}, {{passive: false}});
+    window.addEventListener('touchmove', e => move(e.touches[0].clientX));
+    window.addEventListener('touchend', end);
+  }})();
 
     const encouragements = [
     "Nice!", "Legend!", "Speedy!", "On fire!", "Crushing it!",
@@ -1861,7 +2214,6 @@ def shop():
 </body></html>"""
 
 # --- Save score and leaderboard ---
-
 @app.route("/save_score", methods=["POST"])
 def save_score():
     redir = require_user()
@@ -1877,24 +2229,14 @@ def save_score():
     current_top_score = top.data[0]["score"] if top.data else 0
     new_high_score = score > current_top_score
 
-    # Check if this arcade name already has an entry
-    existing = supabase.table("leaderboard").select("*").eq("username", username).eq("arcade_name", arcade_name).execute()
-
-    if existing.data:
-        if score > existing.data[0]["score"]:
-            supabase.table("leaderboard").update({
-                "score": score,
-                "items_count": items_count,
-                "time_seconds": time_seconds
-            }).eq("id", existing.data[0]["id"]).execute()
-    else:
-        supabase.table("leaderboard").insert({
-            "username": username,
-            "arcade_name": arcade_name,
-            "score": score,
-            "items_count": items_count,
-            "time_seconds": time_seconds
-        }).execute()
+    # Always insert a new entry
+    supabase.table("leaderboard").insert({
+        "username": username,
+        "arcade_name": arcade_name,
+        "score": score,
+        "items_count": items_count,
+        "time_seconds": time_seconds
+    }).execute()
 
     return {"status": "ok", "new_high_score": new_high_score}, 200
 
@@ -1912,26 +2254,23 @@ def get_leaderboard():
 def add():
     redir = require_user()
     if redir: return redir
-
     username = current_user()
     name = request.form.get("item", "").strip()
     if not name:
-        return redirect("/")
-
+        return {"status": "error", "message": "No item name"}, 400
     photo_path = None
     photo = request.files.get("photo")
-
     if photo and photo.filename:
         ext = os.path.splitext(photo.filename)[1].lower()
         if ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
             photo_path = upload_photo(username, photo)
     items = load_items(username)
-    if len(items)>= MAX_ITEMS:
-        return "List is full. Maximum 200 items allowed.", 400
-    items.append({"name": name, "photo": photo_path})
-
+    if len(items) >= MAX_ITEMS:
+        return {"status": "error", "message": "List is full. Maximum 200 items allowed."}, 400
+    new_item = {"name": name, "photo": photo_path}
+    items.append(new_item)
     save_items(username, items)
-    return redirect("/")
+    return {"status": "ok", "item": new_item}, 200
 
 # --- Delete / undo ---
 
