@@ -9,6 +9,26 @@ from datetime import timedelta
 import hashlib
 from dotenv import load_dotenv
 load_dotenv()
+from cryptography.fernet import Fernet
+
+ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
+fernet = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+
+def encrypt_value(value):
+    if not value or not fernet:
+        return value
+    return fernet.encrypt(value.encode()).decode()
+
+def decrypt_value(value):
+    if not value or not fernet:
+        return value
+    try:
+        decrypted = fernet.decrypt(value.encode()).decode()
+        print(f"Decrypted value: {decrypted}")
+        return decrypted
+    except:
+        print(f"Decryption failed for: {value[:20]}...")
+        return value
 
 app = Flask(__name__)
 app.secret_key = "tacobell"
@@ -38,19 +58,11 @@ def generate_barcode_b64(number):
     })
     return base64.b64encode(buf.getvalue()).decode()
 
-def flybuys_file(username):
-    return f"rewards_{safe_username(username)}.json"
-
 def load_rewards_cards(username):
-    result = supabase.table("users").select("rewards_cards, active_card, flybuys").eq("username", username).execute()
+    result = supabase.table("users").select("rewards_cards, active_card").eq("username", username).execute()
     if result.data:
         cards = result.data[0].get("rewards_cards") or []
         active = result.data[0].get("active_card") or 0
-        # Migrate flybuys if rewards_cards is empty
-        if not cards:
-            flybuys = result.data[0].get("flybuys", "")
-            if flybuys:
-                cards = [{"name": "Flybuys", "number": flybuys}]
         return cards, active
     return [], 0
 
@@ -87,7 +99,7 @@ def get_flybuys_card_html(username, css_vars=True):
         active = 0
 
     card = cards[active]
-    number = card.get("number", "")
+    number = decrypt_value(card.get("number", ""))
     name = card.get("name", "Rewards Card")
 
     # Tab switcher if more than one card
@@ -217,17 +229,17 @@ def ensure_user_exists(username, pin=None):
             "username": username,
             "items": [],
             "misc": [],
-            "pin": hashlib.sha256(pin.encode()).hexdigest() if pin else None
+            "pin": encrypt_value(pin) if pin else None,
+            "pin_set": bool(pin)
         }).execute()
 
 def check_pin(username, pin):
     result = supabase.table("users").select("pin").eq("username", username).execute()
-    if not result.data:
-        return False
-    stored_pin = result.data [0].get("pin")
-    if not stored_pin:
-        return True
-    return stored_pin == hashlib.sha256(pin.encode()).hexdigest()
+    if result.data:
+        stored = result.data[0].get("pin")
+        if stored:
+            return decrypt_value(stored) == pin
+    return False
 
 def user_exists(username):
     result = supabase.table("users").select("id").eq("username", username).execute()
@@ -468,7 +480,7 @@ def login():
             pin_display = ""
             if pin:
                 pin_display = " · ".join(pin.split("-"))
-                supabase.table("users").update({"pin_display": pin_display}).eq("username", username).execute()
+                
             return {
                 "status": "created",
                 "username": raw_username,
@@ -773,12 +785,11 @@ def set_pin():
     if not pin:
         return {"status": "error", "message": "No PIN provided."}, 200
 
-    hashed = hashlib.sha256(pin.encode()).hexdigest()  # use whatever hashing function you already use
+    encrypted = encrypt_value(pin)
     pin_display = " · ".join(pin.split("-"))
     supabase.table("users").update({
-        "pin": hashed,
+        "pin": encrypted,
         "pin_set": True,
-        "pin_display": pin_display
     }).eq("username", username).execute()
 
     return {"status": "ok", "pin_display": pin_display}, 200
@@ -794,6 +805,7 @@ def flybuys_edit():
     if request.method == "POST":
         raw = request.form.get("flybuys_number","")
         number = "".join(c for c in raw if c.isdigit())
+        number = encrypt_value(number)
         if number == "0":
             cards, active = load_rewards_cards(username)
             if 0 <= active < len(cards):
@@ -804,8 +816,9 @@ def flybuys_edit():
             error = "Please enter a valid Rewards Card number (at least 8 digits)."
         else:
             try:
-                generate_barcode_b64(number)  # validate it works
-                save_flybuys(username, number)
+                generate_barcode_b64(number)
+                encrypted = encrypt_value(number)
+                save_flybuys(username, encrypted)
                 cards, active = load_rewards_cards(username)
                 if cards:
                     cards[0] = {"name": cards[0].get("name", "Flybuys"), "number": number}
@@ -888,6 +901,7 @@ def add_reward_card():
         else:
             try:
                 generate_barcode_b64(number)
+                number = encrypt_value(number)
                 if name and number:
                     cards.append({"name": name, "number": number})
                     save_rewards_cards(username, cards)
@@ -950,12 +964,14 @@ def edit_reward_card(index):
         else:
             try:
                 generate_barcode_b64(number)
+                number = encrypt_value(number)  # encrypt once, after validation
                 cards[index] = {"name": name, "number": number}
                 save_rewards_cards(username, cards)
                 return redirect("/shop")
             except:
                 error = "Could not generate a barcode for that number. Please check and try again."
     card = cards[index]
+    decrypted_number = decrypt_value(card.get("number", ""))
     error_html = f'<p style="color:var(--red);font-size:14px;margin-top:8px;">{error}</p>' if error else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -968,11 +984,11 @@ def edit_reward_card(index):
       style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
              border:2px solid var(--border);border-radius:10px;background:var(--cream);
              color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;">
-    <input type="text" name="number" value="{card['number']}" required
+    <input type="text" name="number" value="{decrypted_number}" required
       style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
              border:2px solid var(--border);border-radius:10px;background:var(--cream);
              color:var(--text);outline:none;margin-bottom:4px;box-sizing:border-box;">
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Spaces and dashes are fine — just type the number on your card or type 0 to clear.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Spaces and dashes are fine — type 0 to remove this card.</p>
     {error_html}
     <button type="submit"
       style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
@@ -994,10 +1010,11 @@ def home():
     items = load_items(username)
     duplicates = find_duplicates(items)
     last_deleted = session.get("last_deleted", None)
-    result = supabase.table("users").select("pin, pin_display").eq("username", username).execute()
+    result = supabase.table("users").select("pin, pin_set").eq("username", username).execute()
     user_data = result.data[0] if result.data else {}
     has_pin = bool(user_data.get("pin"))
-    pin_display = user_data.get("pin_display") or ""
+    pin = decrypt_value(user_data.get("pin", ""))
+    pin_display = " · ".join(pin.split("-")) if pin else ""
 
     list_html = ""
     for i, item in enumerate(items):
@@ -1502,29 +1519,7 @@ function openUserMenu() {{
       }})
       .catch(err => console.error('Error:', err));
   }}
-  let isTyping = false;
-  let typingTimer;
 
-  document.getElementById('item-input').addEventListener('input', () => {{
-    isTyping = true;
-    clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => {{
-      isTyping = false;
-    }}, 3000);
-  }});
-  
-  setInterval(() => {{
-    if (isTyping) return;
-    fetch('/items')
-      .then(r => r.json())
-      .then(data => {{
-        if (data.status === 'ok' && data.items.length !== lastItemCount) {{
-          lastItemCount = data.items.length;
-          location.reload();
-        }}
-      }})
-      .catch(err => console.log('Poll error:', err));
-  }}, 15000);
 </script>
 </body></html>"""
 
@@ -1685,6 +1680,39 @@ def shop():
       </div>
     </div>
   </div>
+  <div id="all-ticked-overlay"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+         z-index:200;justify-content:center;align-items:center;">
+  <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+              width:90%;max-width:360px;text-align:center;
+              box-shadow:0 -4px 30px rgba(0,0,0,0.2);">
+    <p style="font-size:36px;margin:0 0 8px;">🎉</p>
+    <h2 style="font-family:'Righteous',sans-serif;font-size:24px;color:var(--green);margin:0 0 8px;">All done!</h2>
+    <p style="font-size:14px;color:var(--muted);margin:0 0 24px;">You've ticked everything off your list!</p>
+    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                overflow:hidden;border:2px solid #a5d6a7;
+                animation:pulse-border-green 2s ease-in-out infinite;">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                  font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                  opacity:0.6;user-select:none;pointer-events:none;">
+        Swipe to complete →
+      </div>
+      <div id="all-ticked-slider"
+           style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                  background:linear-gradient(135deg,var(--green),var(--green2));
+                  border-radius:26px;cursor:grab;display:flex;align-items:center;
+                  justify-content:center;font-size:22px;
+                  box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+        🥕
+      </div>
+    </div>
+    <button onclick="document.getElementById('all-ticked-overlay').style.display='none'"
+      style="width:100%;margin-top:12px;padding:12px;background:none;border:none;
+             font-size:15px;color:var(--muted);cursor:pointer;">
+      Not yet
+    </button>
+  </div>
+</div>
 </div>
 
 <!-- Results overlay -->
@@ -1759,6 +1787,22 @@ def shop():
   const ticked = new Set();
   let shopStartTime = null;
 
+  let wakeLock = null;
+  async function requestWakeLock() {{
+    try {{
+      wakeLock = await navigator.wakeLock.request('screen');
+    }} catch (err) {{
+      console.log('Wake lock not supported:', err);
+    }}
+  }}
+  requestWakeLock();
+
+  document.addEventListener('visibilitychange', () => {{
+    if (document.visibilityState === 'visible') {{
+      requestWakeLock();
+    }}
+  }});
+
   shopStartTime = sessionStorage.getItem('shopStartTime');
 
   function toggleItem(cb) {{
@@ -1770,6 +1814,15 @@ def shop():
     }} else {{
       ticked.delete(name);
     }}
+    const allItems = document.querySelectorAll('.shop-item input[type="checkbox"]');
+    const allTicked = [...allItems].every(c => c.checked);
+    if (allTicked && allItems.length > 0) {{
+      setTimeout(() => showAllTickedPrompt(), 500);      
+    }}
+  }}
+
+  function showAllTickedPrompt() {{
+    document.getElementById('all-ticked-overlay').style.display = 'flex';
   }}
 
   function formatTime(seconds) {{
@@ -2099,6 +2152,54 @@ def shop():
     window.addEventListener('touchmove', e => move(e.touches[0].clientX));
     window.addEventListener('touchend', end);
   }})();
+  
+    (function() {{
+    const slider = document.getElementById('all-ticked-slider');
+    if (!slider) return;
+    const track = slider.parentElement;
+    let dragging = false;
+    let startX = 0;
+    let currentX = 0;
+    const maxX = () => track.offsetWidth - slider.offsetWidth - 8;
+
+    function start(x) {{
+      dragging = true;
+      startX = x - currentX;
+      slider.style.cursor = 'grabbing';
+    }}
+
+    function move(x) {{
+      if (!dragging) return;
+      currentX = Math.min(Math.max(0, x - startX), maxX());
+      slider.style.left = (4 + currentX) + 'px';
+      const pct = currentX / maxX();
+      track.style.background = `linear-gradient(to right, #c8e6c9 ${{Math.round(pct*100)}}%, #e8f5e9 ${{Math.round(pct*100)}}%)`;
+      if (pct >= 0.95) {{
+        dragging = false;
+        slider.style.left = (4 + maxX()) + 'px';
+        slider.textContent = '🎉';
+        setTimeout(() => showResults(), 400);
+      }}
+    }}
+
+    function end() {{
+      if (!dragging) return;
+      dragging = false;
+      slider.style.cursor = 'grab';
+      currentX = 0;
+      slider.style.transition = 'left 0.3s';
+      slider.style.left = '4px';
+      track.style.background = '#e8f5e9';
+      setTimeout(() => slider.style.transition = '', 300);
+    }}
+
+    slider.addEventListener('mousedown', e => start(e.clientX));
+    window.addEventListener('mousemove', e => move(e.clientX));
+    window.addEventListener('mouseup', end);
+    slider.addEventListener('touchstart', e => {{ e.preventDefault(); start(e.touches[0].clientX); }}, {{passive: false}});
+    window.addEventListener('touchmove', e => move(e.touches[0].clientX));
+    window.addEventListener('touchend', end);
+  }})();
 
     const encouragements = [
     "Nice!", "Legend!", "Speedy!", "On fire!", "Crushing it!",
@@ -2318,14 +2419,6 @@ def update_category():
     }).execute()
 
     return {"status": "ok"}, 200
-
-@app.route("/items")
-def get_items():
-    redir = require_user()
-    if redir: return redir
-    username = current_user()
-    items = load_items(username)
-    return {"status": "ok", "items": items}, 200
 
 # --- Export ---
 
