@@ -310,11 +310,16 @@ def current_display_name():
     return session.get("display_name") or session.get("username")
     
 def require_user():
-    user = current_user()
-    if not user:
+    if "username" not in session:
+        print("No username in session - redirecting to login")
         return redirect("/login")
+    result = supabase.table("users").select("username").eq("username", session["username"]).execute()
+    print(f"User check result: {result.data}")
+    if not result.data:
+        session.clear()
+        print("User not found - redirecting to login?deleted=1")
+        return redirect("/login?deleted=1")
     return None
-
 # --- Categorisation ---
 
 def categorise_items(items):
@@ -487,7 +492,9 @@ def login():
                 "pin_display": pin_display,
                 "has_pin": bool(pin)
             }, 200
-
+    deleted_msg = ""
+    if request.args.get("deleted"):
+        deleted_msg = '<p style="color:var(--red);font-size:14px;text-align:center;margin-bottom:12px;">This list has been deleted.</p>'
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><title>Aisle Get It!</title>{BASE_HEAD}
@@ -497,13 +504,13 @@ def login():
 <div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
   <h1 style="margin-bottom:8px;">🛒 Aisle Get It!</h1>
   <p id="step-subtitle" style="color:var(--muted);font-size:15px;margin-bottom:15px;">The shareable, simplified shopping list.</p>
-
+  {deleted_msg}
   <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
               padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
 
     <!-- Step 1: Username -->
     <div id="step-username">
-      <input type="text" id="username-input" placeholder="Enter your list name..." autofocus
+      <input type="text" id="username-input" placeholder="Enter your unique list name..." autofocus
         style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
                border:2px solid var(--border);border-radius:10px;background:var(--cream);
                color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;"
@@ -1087,17 +1094,20 @@ def home():
 
     misc_items = load_misc(username)
     misc_rows = ""
-    for i, name in enumerate(misc_items):
+    for name in sorted(misc_items):
         misc_rows += f"""
-        <li style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;">
-          <span style="flex:1;font-size:16px;font-weight:600;">{name}</span>
-          <a href="/misc/delete/{i}" style="color:var(--red);font-size:20px;line-height:1;">×</a>
+        <li style="background:var(--card);border:2px solid var(--border);border-radius:12px;
+            padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" class="misc-checkbox" value="{name}"
+            style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;">
+          <span style="flex:1;font-size:18px;font-weight:600;">{name}</span>
+          <button onclick="deleteMiscItem(this, '{name}')"
+            style="background:none;border:none;color:var(--red);font-size:20px;
+                   cursor:pointer;line-height:1;padding:0;flex-shrink:0;">×</button>
         </li>"""
     if not misc_rows:
         misc_rows = '<li style="color:var(--muted);font-size:14px;padding:10px 0;">Nothing here yet.</li>'
-
     misc_count = f'<span style="background:#ff4444;color:white;border-radius:50%;width:18px;height:18px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;margin-left:6px;">{len(misc_items)}</span>' if misc_items else ""
-
     # Only show Flybuys for the owner
     display_name = current_display_name()
 
@@ -1158,7 +1168,6 @@ def home():
              border:2px solid var(--border);border-radius:12px;font-family:'Righteous',sans-serif;
              font-size:16px;color:var(--text);cursor:pointer;text-align:left;">
       🏆 Leaderboard
-    </button>
     {('''
     <button onclick="openPinSetup()" 
       style="width:100%;padding:14px;margin-bottom:10px;background:var(--cream);
@@ -1167,7 +1176,13 @@ def home():
       🔒 Set a PIN
     </button>
     ''') if not has_pin else ""}
-
+    </button>
+    <button onclick="confirmDeleteList()"
+      style="width:100%;padding:14px;margin-bottom:10px;background:var(--cream);
+             border:2px solid #ffcccc;border-radius:12px;font-family:'Righteous',sans-serif;
+             font-size:16px;color:var(--red);cursor:pointer;text-align:left;">
+      🗑 Delete this account
+    </button>    
     <button onclick="closeUserMenu()"
       style="width:100%;padding:14px;background:none;border:none;
              font-size:15px;color:var(--muted);cursor:pointer;">
@@ -1280,33 +1295,33 @@ def home():
     <span style="font-family:'Righteous',sans-serif;font-size:20px;color:var(--green);">📌 Extras</span>
     <button onclick="closeMisc()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);">×</button>
   </div>
-  <div style="padding:16px;border-bottom:2px solid var(--border);">
-    <form action="/misc/add" method="post" style="display:flex;gap:8px;">
-      <input type="text" name="misc_item" placeholder="Add a note..." required
-        style="flex:1;padding:10px 12px;font-size:15px;font-family:'DM Sans',sans-serif;
-               border:2px solid var(--border);border-radius:10px;background:var(--cream);
-               color:var(--text);outline:none;">
-      <button type="submit"
-        style="padding:10px 14px;background:var(--green);color:white;border:none;
-               border-radius:10px;font-size:18px;cursor:pointer;">+</button>
-    </form>
-  </div>
-  <ul style="flex:1;overflow-y:auto;padding:0 16px;list-style:none;margin:0;">
+    <div style="padding:16px;border-bottom:2px solid var(--border);">
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="misc-input" placeholder="Add a note..." 
+          style="flex:1;padding:10px 12px;font-size:15px;font-family:'DM Sans',sans-serif;
+                 border:2px solid var(--border);border-radius:10px;background:var(--cream);
+                 color:var(--text);outline:none;"
+          onkeydown="if(event.key==='Enter'){{event.preventDefault();addMiscItem();}}">
+        <button onclick="addMiscItem()"
+          style="padding:10px 14px;background:var(--green);color:white;border:none;
+                 border-radius:10px;font-size:18px;cursor:pointer;">+</button>
+      </div>
+    </div>  <ul style="flex:1;overflow-y:auto;padding:0 16px;list-style:none;margin:0;">
     {misc_rows}
   </ul>
   <div style="padding:16px;border-top:2px solid var(--border);">
-    <a href="/misc/clear"
-      style="display:block;text-align:center;padding:11px;background:#fff0f0;
+    <button onclick="clearSelectedMisc()"
+      style="display:block;width:100%;text-align:center;padding:11px;background:#fff0f0;
              color:var(--red);border:2px solid #ffcccc;border-radius:10px;
-             font-size:14px;font-weight:700;font-family:'DM Sans',sans-serif;">
-      🗑 Clear all extras
-    </a>
+             font-size:14px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;">
+      🗑 Clear selected extras
+    </button>
   </div>
 </div>
 
 <script>
-  let lastItemCount = document.querySelectorAll('ul li').length;
   const itemCount = parseInt(document.getElementById('main-list').dataset.count);
+  let lastItemCount = itemCount;
   if (sessionStorage.getItem('hintDismissed') === 'true') {{
     document.getElementById('shop-hint').style.display = 'none';
   }} else if (itemCount > 0) {{
@@ -1328,6 +1343,7 @@ def home():
   function closeMisc() {{
     document.getElementById('misc-panel').classList.remove('open');
     document.getElementById('misc-overlay').classList.remove('open');
+    location.reload();
   }}
 function openUserMenu() {{
     document.getElementById('user-menu').style.display = 'block';
@@ -1500,17 +1516,17 @@ function openUserMenu() {{
           }}
           const mainList = document.getElementById('main-list');
           mainList.dataset.count = parseInt(mainList.dataset.count) + 1;
+          const count = parseInt(mainList.dataset.count);
+          lastItemCount = count;
           const ul = document.getElementById('main-list');
           const li = document.createElement('li');
           li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);';
           li.innerHTML = `<span style="flex:1;font-size:17px;font-weight:600;">${{data.item.name}}</span>
-            <a href="/delete/${{document.querySelectorAll('ul li').length}}" style="color:var(--red);font-size:22px;line-height:1;margin-left:10px;opacity:0.7;">×</a>`;
+            <a href="/delete/${{count - 1}}" style="color:var(--red);font-size:22px;line-height:1;margin-left:10px;opacity:0.7;">×</a>`;
           ul.appendChild(li);
           input.value = '';
           document.getElementById('photo-input').value = '';
           document.getElementById('preview').style.display = 'none';
-          const count = document.querySelectorAll('ul li').length;
-          lastItemCount = count;
           const countEl = document.querySelector('p[style*="text-transform:uppercase"]');
           if (countEl) countEl.textContent = count + ' ITEM' + (count !== 1 ? 'S' : '') + ' ON YOUR LIST';
         }} else {{
@@ -1519,7 +1535,74 @@ function openUserMenu() {{
       }})
       .catch(err => console.error('Error:', err));
   }}
-
+  function confirmDeleteList() {{
+    closeUserMenu();
+    if (confirm('Are you sure? This will permanently delete your list and data for all users. This cannot be undone.')) {{
+      fetch('/delete_list', {{ method: 'POST' }})
+        .then(r => r.json())
+        .then(data => {{
+          if (data.status === 'ok') {{
+            window.location.href = '/login?deleted=1';
+          }}
+        }});
+    }}
+  }}
+  function clearSelectedMisc() {{
+    const checked = [...document.querySelectorAll('.misc-checkbox:checked')].map(cb => cb.value);
+    if (checked.length === 0) {{
+      alert('Select some items first.');
+      return;
+    }}
+    const form = new FormData();
+    form.append('items', JSON.stringify(checked));
+    fetch('/misc/clear_selected', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok') {{
+          checked.forEach(name => {{
+            document.querySelectorAll('.misc-checkbox').forEach(cb => {{
+              if (cb.value === name) cb.closest('li').remove();
+            }});
+          }});
+        }}
+      }});
+  }}
+  function addMiscItem() {{
+    const input = document.getElementById('misc-input');
+    const name = input.value.trim();
+    if (!name) return;
+    const form = new FormData();
+    form.append('misc_item', name);
+    fetch('/misc/add', {{ method: 'POST', body: form }})
+      .then(r => r.json())
+      .then(data => {{
+        if (data.status === 'ok') {{
+          const ul = document.querySelector('#misc-panel ul');
+          const li = document.createElement('li');
+          li.style.cssText = 'background:var(--card);border:2px solid var(--border);border-radius:10px;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:12px;';
+          li.innerHTML = `
+            <input type="checkbox" class="misc-checkbox" value="${{name}}"
+              style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;">
+            <span style="flex:1;font-size:18px;font-weight:600;">${{name}}</span>
+            <button onclick="deleteMiscItem(this, '${{name}}')"
+              style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;line-height:1;padding:0;flex-shrink:0;">×</button>
+          `;
+          ul.appendChild(li);
+          input.value = '';
+        }}
+      }});
+  }}
+    function deleteMiscItem(btn, name) {{
+      const form = new FormData();
+      form.append('items', JSON.stringify([name]));
+      fetch('/misc/clear_selected', {{ method: 'POST', body: form }})
+        .then(r => r.json())
+        .then(data => {{
+          if (data.status === 'ok') {{
+            btn.closest('li').remove();
+          }}
+        }});
+    }}
 </script>
 </body></html>"""
 
@@ -1539,15 +1622,11 @@ def shop():
     misc_section = ""
     if misc_items:
         misc_rows = ""
-        for name in misc_items:
+        for name in sorted(misc_items):
             misc_rows += f"""
-            <li class="shop-item" style="background:#fff8f0;border:2px solid #f0d9c0;border-radius:12px;
-                padding:12px 14px;margin-bottom:8px;transition:opacity 0.3s;">
-              <label style="display:grid;grid-template-columns:1fr auto;align-items:center;width:100%;cursor:pointer;gap:12px;">
-                <span style="font-size:17px;font-weight:600;text-align:right;display:block;width:100%;">{name}</span>
-                <input type="checkbox" onchange="toggleItem(this)"
-                  style="width:22px;height:22px;accent-color:var(--orange);cursor:pointer;">
-              </label>
+            <li style="background:var(--card);border:2px solid var(--border);border-radius:10px;
+                padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:14px;font-weight:600;">{name}</span>
             </li>"""
         misc_section = f"""
         <div style="margin-bottom:8px;">
@@ -1656,7 +1735,7 @@ def shop():
   {misc_section}
 
   <a href="/" style="display:flex;align-items:center;gap:6px;margin-top:18px;color:var(--muted);font-size:15px;font-weight:600;">
-    ← Back to list
+    ← Back to edit list
   </a>
   <div style="height:80px;"></div>
   <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
@@ -1719,6 +1798,9 @@ def shop():
 <div id="results-overlay"
   style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
          z-index:200;justify-content:center;align-items:center;">
+  <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+              width:90%;max-width:480px;box-shadow:0 -4px 30px rgba(0,0,0,0.2);
+              max-height:90vh;overflow-y:auto;position:relative;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;padding:28px 24px;
               width:100%;max-width:480px;box-shadow:0 -4px 30px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto;">
         <div style="text-align:center;margin-bottom:16px;">
@@ -1750,6 +1832,48 @@ def shop():
         Submit
       </button>
     </div>
+
+    <div style="display:flex;align-items:left;gap:10px;justify-content:left;margin-bottom:16px;">
+      <input type="checkbox" id="skip-score-checkbox"
+        style="width:18px;height:18px;accent-color:var(--muted);cursor:pointer;">
+      <label for="skip-score-checkbox" style="font-size:13px;color:var(--muted);cursor:pointer;">
+        Don't record this shop score
+      </label>
+    </div>
+
+<div id="finish-overlay"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+         z-index:200;justify-content:center;align-items:center;">
+  <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+              width:90%;max-width:480px;text-align:center;
+              box-shadow:0 4px 30px rgba(0,0,0,0.2);">
+    <p style="font-size:28px;margin:0 0 8px;">🛒</p>
+    <h2 style="font-family:'Righteous',sans-serif;font-size:22px;color:var(--text);margin:0 0 6px;">Finish shopping?</h2>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 20px;">Swipe to clear your ticked items.</p>
+    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                overflow:hidden;border:2px solid #a5d6a7;
+                animation:pulse-border-green 2s ease-in-out infinite;">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                  font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                  opacity:0.6;user-select:none;pointer-events:none;">
+        Swipe to finish →
+      </div>
+      <div id="skip-slider"
+           style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                  background:linear-gradient(135deg,var(--green),var(--green2));
+                  border-radius:26px;cursor:grab;display:flex;align-items:center;
+                  justify-content:center;font-size:22px;
+                  box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+        ✅
+      </div>
+    </div>
+    <button onclick="document.getElementById('finish-overlay').style.display='none'"
+      style="width:100%;margin-top:12px;padding:12px;background:none;border:none;
+             font-size:15px;color:var(--muted);cursor:pointer;">
+      Cancel
+    </button>
+  </div>
+</div>
 
     <!-- Leaderboard -->
     <p style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;
@@ -1830,14 +1954,37 @@ def shop():
     const s = seconds % 60;
     return m > 0 ? `${{m}}m ${{s}}s` : `${{s}}s`;
   }}
+  function isSuspiciousShop(itemsCount, timeSeconds) {{
+    const avg = timeSeconds / itemsCount;
 
-  function showResults() {{
+    if (avg < 3) return true;
+
+    if (timeSeconds < itemsCount * 2) return true;
+
+    return false;
+  }}
+  function askSuspiciousConfirmation() {{
+    return new Promise(resolve => {{
+      const overlay = document.getElementById('suspicious-overlay');
+      overlay.style.display = 'flex';
+
+      document.getElementById('suspicious-yes').onclick = () => {{
+        overlay.style.display = 'none';
+        resolve(true);
+      }};
+
+      document.getElementById('suspicious-no').onclick = () => {{
+        overlay.style.display = 'none';
+        resolve(false);
+      }};
+    }});
+  }}
+  async function showResults() {{
     const endTime = Date.now();
     const startTime = parseInt(shopStartTime) || endTime;
     const elapsed = Math.floor((endTime - startTime) / 1000);
     const tickedCount = ticked.size;
     const score = tickedCount > 0 ? Math.round((tickedCount * 100000) / Math.max(elapsed / 60, 0.1)) : 0;
-
     document.getElementById('result-score').textContent = score.toLocaleString();
     document.getElementById('result-time').textContent = `${{getEncouragement()}} ${{tickedCount}} items purchased in ${{formatTime(elapsed)}}`;
 
@@ -1869,6 +2016,10 @@ def shop():
   }}
 
   function submitScore() {{
+      if (document.getElementById('skip-score-checkbox').checked) {{
+      finishShopping();
+      return;
+    }}
     const arcadeName = document.getElementById('arcade-input').value.trim();
     if (!arcadeName || arcadeName.length < 1) {{
       document.getElementById('arcade-input').style.borderColor = 'var(--red)';
@@ -1934,9 +2085,9 @@ def shop():
   function getRandomName() {{
     return randomNames[Math.floor(Math.random() * randomNames.length)];
   }}
-    function finishShopping() {{
+  function finishShopping() {{
     const arcadeInput = document.getElementById('arcade-input');
-    if (arcadeInput && arcadeInput.style.display !== 'none' && !arcadeInput.value.trim()) {{
+    if (arcadeInput && arcadeInput.style.display !== 'none' && !arcadeInput.value.trim() && !document.getElementById('skip-score-checkbox').checked) {{
       window._finishAfterSubmit = true;
       arcadeInput.value = getRandomName();
       submitScore();
@@ -2072,22 +2223,42 @@ def shop():
       slider.style.cursor = 'grabbing';
     }}
 
+    let completed = false;
     function move(x) {{
-      if (!dragging) return;
+      if (!dragging || completed) return;
       currentX = Math.min(Math.max(0, x - startX), maxX());
       slider.style.left = (4 + currentX) + 'px';
       const pct = currentX / maxX();
       track.style.background = `linear-gradient(to right, #c8e6c9 ${{Math.round(pct*100)}}%, #e8f5e9 ${{Math.round(pct*100)}}%)`;
       if (pct >= 0.95) {{
+        completed = true;
         dragging = false;
         slider.style.left = (4 + maxX()) + 'px';
         slider.textContent = '🎉';
-        setTimeout(() => showResults(), 400);
+        setTimeout(() => {{
+          const endTime = Date.now();
+          const startTime = parseInt(shopStartTime) || endTime;
+          const elapsed = Math.floor((endTime - startTime) / 1000);
+          const tickedCount = ticked.size;
+          if (isSuspiciousShop(tickedCount, elapsed)) {{
+            const allTickedOverlay = document.getElementById('all-ticked-overlay');
+            allTickedOverlay.remove();
+            askSuspiciousConfirmation().then(ok => {{
+              if (!ok) {{
+                document.getElementById('skip-score-checkbox').checked = true;
+              }}
+              showResults();
+            }});
+          }} else {{
+            console.log('calling showResults');
+            setTimeout(() => showResults(), 400);
+          }}
+        }}, 400);
       }}
     }}
 
     function end() {{
-      if (!dragging) return;
+      if (!dragging || completed) return;
       dragging = false;
       slider.style.cursor = 'grab';
       currentX = 0;
@@ -2152,7 +2323,7 @@ def shop():
     window.addEventListener('touchmove', e => move(e.touches[0].clientX));
     window.addEventListener('touchend', end);
   }})();
-  
+
     (function() {{
     const slider = document.getElementById('all-ticked-slider');
     if (!slider) return;
@@ -2167,23 +2338,37 @@ def shop():
       startX = x - currentX;
       slider.style.cursor = 'grabbing';
     }}
+    let completed = false;
 
     function move(x) {{
-      if (!dragging) return;
+      if (!dragging || completed) return;
       currentX = Math.min(Math.max(0, x - startX), maxX());
       slider.style.left = (4 + currentX) + 'px';
       const pct = currentX / maxX();
       track.style.background = `linear-gradient(to right, #c8e6c9 ${{Math.round(pct*100)}}%, #e8f5e9 ${{Math.round(pct*100)}}%)`;
       if (pct >= 0.95) {{
+        completed = true;
         dragging = false;
         slider.style.left = (4 + maxX()) + 'px';
         slider.textContent = '🎉';
-        setTimeout(() => showResults(), 400);
+        setTimeout(async () => {{
+          const endTime = Date.now();
+          const startTime = parseInt(shopStartTime) || endTime;
+          const elapsed = Math.floor((endTime - startTime) / 1000);
+          const tickedCount = ticked.size;
+          if (isSuspiciousShop(tickedCount, elapsed)) {{
+            const ok = await askSuspiciousConfirmation();
+            if (!ok) {{
+              document.getElementById('skip-score-checkbox').checked = true;
+              return;
+            }}
+          }}
+          showResults();
+        }}, 400);
       }}
     }}
-
     function end() {{
-      if (!dragging) return;
+      if (!dragging || completed) return;
       dragging = false;
       slider.style.cursor = 'grab';
       currentX = 0;
@@ -2209,7 +2394,77 @@ def shop():
   function getEncouragement() {{
     return encouragements[Math.floor(Math.random() * encouragements.length)];
   }}
+  function skipScoring() {{
+    document.getElementById('results-overlay').style.display = 'none';
+    document.getElementById('finish-overlay').style.display = 'flex';
+  }}
+  (function() {{
+    const slider = document.getElementById('skip-slider');
+    if (!slider) return;
+    const track = slider.parentElement;
+    let dragging = false;
+    let startX = 0;
+    let currentX = 0;
+    const maxX = () => track.offsetWidth - slider.offsetWidth - 8;
+
+    function start(x) {{
+      dragging = true;
+      startX = x - currentX;
+      slider.style.cursor = 'grabbing';
+    }}
+
+    function move(x) {{
+      if (!dragging) return;
+      currentX = Math.min(Math.max(0, x - startX), maxX());
+      slider.style.left = (4 + currentX) + 'px';
+      const pct = currentX / maxX();
+      track.style.background = `linear-gradient(to right, #c8e6c9 ${{Math.round(pct*100)}}%, #e8f5e9 ${{Math.round(pct*100)}}%)`;
+      if (pct >= 0.95) {{
+        dragging = false;
+        slider.style.left = (4 + maxX()) + 'px';
+        slider.textContent = '✓';
+        setTimeout(() => finishShopping(), 400);
+      }}
+    }}
+
+    function end() {{
+      if (!dragging) return;
+      dragging = false;
+      slider.style.cursor = 'grab';
+      currentX = 0;
+      slider.style.transition = 'left 0.3s';
+      slider.style.left = '4px';
+      track.style.background = '#e8f5e9';
+      setTimeout(() => slider.style.transition = '', 300);
+    }}
+
+    slider.addEventListener('mousedown', e => start(e.clientX));
+    window.addEventListener('mousemove', e => move(e.clientX));
+    window.addEventListener('mouseup', end);
+    slider.addEventListener('touchstart', e => {{ e.preventDefault(); start(e.touches[0].clientX); }}, {{passive: false}});
+    window.addEventListener('touchmove', e => move(e.touches[0].clientX));
+    window.addEventListener('touchend', end);
+  }})();
 </script>
+
+    <div id="suspicious-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);
+         z-index:999999;align-items:center;justify-content:center;">
+      <div style="background:var(--cream);border-radius:16px;padding:28px 32px;max-width:340px;
+                  text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+        <p style="font-family:'Righteous',sans-serif;font-size:17px;color:var(--text);margin-bottom:18px;">
+          ⚡ Lightspeed detected!<br>This shop speed was so fast it's almost unhuman ...<br>Are you sure you want to record this score?
+        </p>
+        <div style="display:flex;gap:12px;justify-content:center;">
+          <button id="suspicious-yes" style="padding:10px 24px;background:var(--green);color:#fff;
+                  border:none;border-radius:10px;font-family:'Righteous',sans-serif;
+                  font-size:15px;cursor:pointer;">Yes</button>
+          <button id="suspicious-no" style="padding:10px 24px;background:var(--muted);color:#fff;
+                  border:none;border-radius:10px;font-family:'Righteous',sans-serif;
+                  font-size:15px;cursor:pointer;">No</button>
+        </div>
+      </div>
+    </div>
+
 
 </body></html>"""
 
@@ -2318,10 +2573,10 @@ def misc_add():
     username = current_user()
     name = request.form.get("misc_item", "").strip()
     if name:
-        items = load_misc(username)
-        items.append(name)
-        save_misc(username, items)
-    return redirect("/")
+        misc = load_misc(username)
+        misc.append(name)
+        save_misc(username, misc)
+    return {"status": "ok"}, 200
 
 @app.route("/toggle/<int:index>", methods=["POST"])
 def toggle(index):
@@ -2354,13 +2609,16 @@ def misc_delete(index):
         save_misc(username, items)
     return redirect("/")
 
-@app.route("/misc/clear")
-def misc_clear():
+@app.route("/misc/clear_selected", methods=["POST"])
+def misc_clear_selected():
     redir = require_user()
     if redir: return redir
     username = current_user()
-    save_misc(username, [])
-    return redirect("/")
+    items_to_remove = json.loads(request.form.get("items", "[]"))
+    misc = load_misc(username)
+    misc = [item for item in misc if item not in items_to_remove]
+    save_misc(username, misc)
+    return {"status": "ok"}, 200
 
 # --- Clear ---
 
@@ -2417,6 +2675,16 @@ def update_category():
         "new_category": new_category,
         "username": username
     }).execute()
+
+    return {"status": "ok"}, 200
+
+@app.route("/delete_list", methods=["POST"])
+def delete_list():
+    redir = require_user()
+    if redir: return redir
+    username = current_user()
+    supabase.table("leaderboard").delete().eq("username", username).execute()
+    supabase.table("users").delete().eq("username", username).execute()
 
     return {"status": "ok"}, 200
 
