@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Rewards — {{ username }}{% endblock %}
+{% block body %}
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:8px;">💳 Rewards</h1>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:32px;">Enter your Rewards card number</p>
+  <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+              padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+    <form method="post">
+      <input type="text" name="flybuys_number" placeholder="e.g. 2793 2023 8221 70"
+        value="{{ current_val }}"
+        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+               border:2px solid var(--border);border-radius:10px;background:var(--cream);
+               color:var(--text);outline:none;margin-bottom:4px;letter-spacing:2px;"
+        onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Spaces and dashes are fine — just type the number on your card or type 0 to clear.</p>
+      {% if error %}
+      <p style="color:var(--red);font-size:14px;margin-top:8px;">{{ error }}</p>
+      {% endif %}
+      <button type="submit"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+               box-shadow:0 4px 12px rgba(58,125,68,0.3);margin-top:8px;">
+        Save card
+      </button>
+    </form>
+  </div>
+  <a href="/" style="margin-top:20px;color:var(--muted);font-size:15px;">← Back</a>
+</div>
+{% endblock %}

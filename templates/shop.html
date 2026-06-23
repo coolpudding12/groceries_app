@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}Shopping — {{ display_name }}{% endblock %}
+{% block head %}
+<style>
+  .shop-item.done { opacity:0.4; }
+  .shop-item.done span { text-decoration:line-through; }
+  .confirm-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);justify-content:center;align-items:center;z-index:100; }
+  .confirm-overlay.visible { display:flex; }
+  .confirm-box { background:white;border-radius:20px;padding:32px 24px;max-width:300px;width:90%;text-align:center; }
+  .confirm-box h2 { font-family:'Righteous',sans-serif;font-size:24px;color:var(--text);margin-bottom:8px; }
+  .confirm-box p { font-size:15px;color:var(--muted);margin-bottom:24px;line-height:1.5; }
+  .confirm-btns { display:flex;gap:10px; }
+  .btn-cancel { flex:1;padding:13px;font-size:16px;font-family:'DM Sans',sans-serif;font-weight:700;background:#f0ece4;color:var(--text);border:none;border-radius:12px;cursor:pointer; }
+  .btn-yes { flex:1;padding:13px;font-size:16px;font-family:'DM Sans',sans-serif;font-weight:700;background:var(--red);color:white;border:none;border-radius:12px;cursor:pointer; }
+  @keyframes pulse-border-green {
+    0%   { box-shadow: 0 0 0 0 rgba(58,125,68,0.4); }
+    50%  { box-shadow: 0 0 0 8px rgba(58,125,68,0); }
+    100% { box-shadow: 0 0 0 0 rgba(58,125,68,0); }
+  }
+  @keyframes pulse-border-orange {
+    0%   { box-shadow: 0 0 0 0 rgba(240,125,53,0.4); }
+    50%  { box-shadow: 0 0 0 8px rgba(240,125,53,0); }
+    100% { box-shadow: 0 0 0 0 rgba(240,125,53,0); }
+  }
+</style>
+{% endblock %}
+{% block body %}
+<div class="page">
+  <h1>🛒 {{ display_name }}</h1>
+  {{ flybuys_html | safe }}
+
+  <div id="shop-tips" style="background:var(--cream);border:2px solid var(--border);
+              border-radius:12px;padding:10px 14px;margin-bottom:16px;
+              display:flex;align-items:center;gap:8px;">
+    <div style="flex:1;">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">✅ Tick items as you add them to your cart</p>
+      <p style="font-size:13px;color:var(--muted);margin:0;">Long press on an item to change its aisle</p>
+    </div>
+    <button onclick="document.getElementById('shop-tips').style.display='none'"
+      style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;opacity:0.7;padding:0;line-height:1;flex-shrink:0;">
+      ×
+    </button>
+  </div>
+
+  {% set ns = namespace(index=0) %}
+  {% for category, cat_items in categories.items() %}
+  <div style="margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:8px;margin:20px 0 10px;">
+      <span style="font-size:20px;">{{ category_icons.get(category, '🛒') }}</span>
+      <h2 style="font-family:'Righteous',sans-serif;font-size:18px;font-weight:600;color:var(--green);">{{ category }}</h2>
+    </div>
+    <ul>
+      {% for item in cat_items %}
+      <li class="shop-item" data-id="{{ ns.index }}" data-name="{{ item.name }}" data-category="{{ item.get('category', category) }}"
+          style="background:var(--card);border:2px solid var(--border);border-radius:12px;
+          padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;transition:opacity 0.3s;">
+        <label style="display:flex;align-items:center;width:100%;cursor:pointer;">
+          <input type="checkbox" onchange="toggleItem(this)"
+            style="width:22px;height:22px;margin-right:12px;accent-color:var(--green);flex-shrink:0;cursor:pointer;">
+          {% if item.photo_url %}
+          <img src="{{ item.photo_url }}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;margin-right:12px;flex-shrink:0;">
+          {% endif %}
+          <span style="font-size:17px;font-weight:600;">{{ item.name }}</span>
+        </label>
+        <span title="Hold to change category"
+          style="font-size:16px;color:var(--muted);opacity:0.8;margin-left:8px;flex-shrink:0;font-weight:600;
+                 user-select:none;cursor:context-menu;">⋮</span>
+      </li>
+      {% set ns.index = ns.index + 1 %}
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+
+  {% if misc_items %}
+  <div style="margin-bottom:8px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 10px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:20px;">📌</span>
+        <h2 style="font-family:'Righteous',sans-serif;font-size:18px;font-weight:600;color:var(--orange);">Extras</h2>
+      </div>
+      <span style="font-size:12px;color:var(--muted);font-weight:600;">separate trip</span>
+    </div>
+    <ul>
+      {% for name in misc_items|sort %}
+      <li style="background:var(--card);border:2px solid var(--border);border-radius:10px;
+          padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:14px;font-weight:600;">{{ name }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <a href="/" style="display:flex;align-items:center;gap:6px;margin-top:18px;color:var(--muted);font-size:15px;font-weight:600;">
+    ← Back to edit list
+  </a>
+  <div style="height:80px;"></div>
+
+  <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
+              background:linear-gradient(to top, var(--cream) 80%, transparent);z-index:50;">
+    <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                overflow:hidden;border:2px solid #a5d6a7;animation:pulse-border-green 2s ease-in-out infinite;">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                  font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                  opacity:0.6;user-select:none;pointer-events:none;">
+        Swipe when done →
+      </div>
+      <div id="complete-slider"
+           style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                  background:linear-gradient(135deg,var(--green),var(--green2));
+                  border-radius:26px;cursor:grab;display:flex;align-items:center;
+                  justify-content:center;font-size:22px;
+                  box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+        🥕
+      </div>
+    </div>
+  </div>
+
+  <div id="all-ticked-overlay"
+    style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+           z-index:200;justify-content:center;align-items:center;">
+    <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+                width:90%;max-width:360px;text-align:center;box-shadow:0 -4px 30px rgba(0,0,0,0.2);">
+      <p style="font-size:36px;margin:0 0 8px;">🎉</p>
+      <h2 style="font-family:'Righteous',sans-serif;font-size:24px;color:var(--green);margin:0 0 8px;">All done!</h2>
+      <p style="font-size:14px;color:var(--muted);margin:0 0 24px;">You've ticked everything off your list!</p>
+      <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                  overflow:hidden;border:2px solid #a5d6a7;animation:pulse-border-green 2s ease-in-out infinite;">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                    font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                    opacity:0.6;user-select:none;pointer-events:none;">
+          Swipe to complete →
+        </div>
+        <div id="all-ticked-slider"
+             style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                    background:linear-gradient(135deg,var(--green),var(--green2));
+                    border-radius:26px;cursor:grab;display:flex;align-items:center;
+                    justify-content:center;font-size:22px;
+                    box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+          🥕
+        </div>
+      </div>
+      <button onclick="document.getElementById('all-ticked-overlay').style.display='none'"
+        style="width:100%;margin-top:12px;padding:12px;background:none;border:none;font-size:15px;color:var(--muted);cursor:pointer;">
+        Not yet
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Results overlay -->
+<div id="results-overlay"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+         z-index:200;justify-content:center;align-items:center;">
+  <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+              width:90%;max-width:480px;box-shadow:0 -4px 30px rgba(0,0,0,0.2);
+              max-height:90vh;overflow-y:auto;position:relative;">
+    <div style="background:var(--card);border-radius:20px 20px 0 0;padding:28px 24px;
+                width:100%;max-width:480px;box-shadow:0 -4px 30px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <p style="font-size:28px;margin:0;">🏆</p>
+        <h2 style="font-family:'Righteous',sans-serif;font-size:26px;color:var(--green);margin:8px 0 4px;">Shop Complete!</h2>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">The faster you shop, the higher your score.</p>
+      </div>
+      <div style="background:#f0f9f0;border:2px solid #a5d6a7;border-radius:16px;
+                  padding:12px;text-align:center;margin-bottom:16px;">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">Your Score</p>
+        <p id="result-score" style="font-family:'Righteous',sans-serif;font-size:40px;color:var(--green);margin:0;"></p>
+      </div>
+      <p id="result-time" style="font-size:12px;color:var(--muted);text-align:center;margin:0 0 16px;"></p>
+      <p style="font-size:13px;font-weight:700;color:var(--text);margin:0 0 6px;">Enter your name for this list's Leaderboard:</p>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <input id="arcade-input" maxlength="8" placeholder="AAA"
+          style="flex:1;min-width:0;padding:8px;font-size:18px;font-family:'Righteous',sans-serif;
+                 text-align:center;text-transform:uppercase;letter-spacing:4px;
+                 border:2px solid var(--border);border-radius:7px;background:var(--cream);
+                 color:var(--green);outline:none;"
+          oninput="this.value=this.value.toUpperCase()"
+          onfocus="this.style.borderColor='var(--green)'"
+          onblur="this.style.borderColor='var(--border)'">
+        <button onclick="submitScore()"
+          style="padding:8px 16px;background:var(--green);color:white;border:none;
+                 border-radius:12px;font-family:'Righteous',sans-serif;font-size:14px;cursor:pointer;flex-shrink:0;">
+          Submit
+        </button>
+      </div>
+      <div style="display:flex;align-items:left;gap:10px;justify-content:left;margin-bottom:16px;">
+        <input type="checkbox" id="skip-score-checkbox" style="width:18px;height:18px;accent-color:var(--muted);cursor:pointer;">
+        <label for="skip-score-checkbox" style="font-size:13px;color:var(--muted);cursor:pointer;">
+          Don't record this shop score
+        </label>
+      </div>
+
+      <div id="finish-overlay"
+        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+               z-index:200;justify-content:center;align-items:center;">
+        <div style="background:var(--card);border-radius:20px;padding:28px 24px;
+                    width:90%;max-width:480px;text-align:center;box-shadow:0 4px 30px rgba(0,0,0,0.2);">
+          <p style="font-size:28px;margin:0 0 8px;">🛒</p>
+          <h2 style="font-family:'Righteous',sans-serif;font-size:22px;color:var(--text);margin:0 0 6px;">Finish shopping?</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 20px;">Swipe to clear your ticked items.</p>
+          <div style="position:relative;width:100%;height:60px;background:#e8f5e9;border-radius:30px;
+                      overflow:hidden;border:2px solid #a5d6a7;animation:pulse-border-green 2s ease-in-out infinite;">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                        font-family:'Righteous',sans-serif;font-size:17px;color:var(--green);
+                        opacity:0.6;user-select:none;pointer-events:none;">
+              Swipe to finish →
+            </div>
+            <div id="skip-slider"
+                 style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                        background:linear-gradient(135deg,var(--green),var(--green2));
+                        border-radius:26px;cursor:grab;display:flex;align-items:center;
+                        justify-content:center;font-size:22px;
+                        box-shadow:0 4px 12px rgba(58,125,68,0.4);user-select:none;">
+              ✅
+            </div>
+          </div>
+          <button onclick="document.getElementById('finish-overlay').style.display='none'"
+            style="width:100%;margin-top:12px;padding:12px;background:none;border:none;font-size:15px;color:var(--muted);cursor:pointer;">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <p style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;">🏅 Leaderboard</p>
+      <div id="leaderboard-list"></div>
+
+      <div style="height:70px;"></div>
+      <div style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;
+                  background:linear-gradient(to top, white 80%, transparent);z-index:50;">
+        <div style="position:relative;width:100%;height:60px;background:#fff3e0;border-radius:30px;
+                    overflow:hidden;border:2px solid #f0a050;animation:pulse-border-orange 2s ease-in-out infinite;">
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                      font-family:'Righteous',sans-serif;font-size:17px;color:#e07020;
+                      opacity:0.6;user-select:none;pointer-events:none;">
+            Swipe to finish & clear list→
+          </div>
+          <div id="finish-slider"
+               style="position:absolute;left:4px;top:4px;width:52px;height:44px;
+                      background:linear-gradient(135deg,var(--orange),var(--orange2));
+                      border-radius:26px;cursor:grab;display:flex;align-items:center;
+                      justify-content:center;font-size:22px;
+                      box-shadow:0 4px 12px rgba(240,125,53,0.4);user-select:none;">
+            🛍️
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form id="clear-form" action="/clear" method="post" style="display:none;">
+  <input type="hidden" name="ticked" id="ticked-input" value="">
+</form>
+
+<div id="suspicious-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);
+     z-index:999999;align-items:center;justify-content:center;">
+  <div style="background:var(--cream);border-radius:16px;padding:28px 32px;max-width:340px;
+              text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <p style="font-family:'Righteous',sans-serif;font-size:17px;color:var(--text);margin-bottom:18px;">
+      ⚡ Lightspeed detected!<br>This shop speed was so fast it's almost unhuman ...<br>Are you sure you want to record this score?
+    </p>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <button id="suspicious-yes" style="padding:10px 24px;background:var(--green);color:#fff;
+              border:none;border-radius:10px;font-family:'Righteous',sans-serif;font-size:15px;cursor:pointer;">Yes</button>
+      <button id="suspicious-no" style="padding:10px 24px;background:var(--muted);color:#fff;
+              border:none;border-radius:10px;font-family:'Righteous',sans-serif;font-size:15px;cursor:pointer;">No</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/shop.js"></script>
+{% endblock %}

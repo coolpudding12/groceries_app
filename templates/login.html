@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Aisle Get It!{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+{% endblock %}
+{% block body %}
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:8px;">🛒 Aisle Get It!</h1>
+  <p id="step-subtitle" style="color:var(--muted);font-size:15px;margin-bottom:15px;">The shareable, simplified shopping list.</p>
+
+  {% if deleted %}
+  <p style="color:var(--red);font-size:14px;text-align:center;margin-bottom:12px;">This list has been deleted.</p>
+  {% endif %}
+
+  <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+              padding:24px;width:100%;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,0.05);">
+
+    <!-- Step 1: Username -->
+    <div id="step-username">
+      <input type="text" id="username-input" placeholder="Enter your unique list name..." autofocus
+        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+               border:2px solid var(--border);border-radius:10px;background:var(--cream);
+               color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;"
+        onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();checkUsername();}">
+      <div id="username-error" style="color:var(--red);font-size:14px;margin-bottom:8px;display:none;"></div>
+      <button onclick="checkUsername()"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+               box-shadow:0 4px 12px rgba(58,125,68,0.3);">
+        Continue →
+      </button>
+    </div>
+
+    <!-- Step 2: PIN entry (existing user) -->
+    <div id="step-pin" style="display:none;">
+      <p style="font-size:15px;font-weight:600;margin-bottom:16px;color:var(--text);text-align:center;">
+        Welcome back, <span id="display-name-pin"></span>! Enter your PIN.
+      </p>
+      <div style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
+        <span id="pin-val1" style="font-size:48px;font-weight:700;color:var(--green);min-width:48px;text-align:center;">0</span>
+        <span style="font-size:48px;font-weight:700;color:var(--muted);">•</span>
+        <span id="pin-val2" style="font-size:48px;font-weight:700;color:var(--green);min-width:48px;text-align:center;">0</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px;">
+        <input type="range" min="0" max="20" value="0" id="pin-slider1" oninput="updateLoginPin()" style="width:100%;">
+        <input type="range" min="0" max="20" value="0" id="pin-slider2" oninput="updateLoginPin()" style="width:100%;">
+      </div>
+      <div id="pin-error" style="color:var(--red);font-size:14px;margin-bottom:8px;display:none;">
+        Incorrect PIN. Try again.
+      </div>
+      <button onclick="verifyPin()"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;
+               box-shadow:0 4px 12px rgba(58,125,68,0.3);">
+        Continue →
+      </button>
+    </div>
+
+    <!-- Step 3: New user confirmation -->
+    <div id="step-new-user" style="display:none;">
+      <p style="font-size:16px;font-weight:400;margin-bottom:4px;text-align:center;color:var(--muted);">
+        No list found for <strong id="display-name-new" style="color:var(--green);"></strong>.
+      </p>
+      <p style="font-size:16px;font-weight:600;margin-bottom:16px;text-align:center;">
+        Want to create one?
+      </p>
+
+      <label style="display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;font-size:15px;
+                    font-weight:600;margin-bottom:16px;">
+        <input type="checkbox" id="pin-toggle" onchange="togglePinSection()"
+          style="width:20px;height:12px;accent-color:var(--green);cursor:pointer;">
+        Keep your list private, add a PIN
+      </label>
+
+      <div id="create-pin-section" style="display:none;margin-bottom:16px;">
+        <div style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
+          <span id="create-val1" style="font-size:40px;font-weight:700;color:var(--green);min-width:40px;text-align:center;">0</span>
+          <span style="font-size:40px;font-weight:700;color:var(--muted);">•</span>
+          <span id="create-val2" style="font-size:40px;font-weight:700;color:var(--green);min-width:40px;text-align:center;">0</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <input type="range" min="0" max="20" value="0" id="create-slider1" oninput="updateCreatePin()" style="width:100%;">
+          <input type="range" min="0" max="20" value="0" id="create-slider2" oninput="updateCreatePin()" style="width:100%;">
+        </div>
+        <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;">
+          Use the sliders above to set your list's permanent PIN number
+        </p>
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button onclick="createAccount()"
+          style="flex:1;padding:13px;font-size:16px;font-family:'Righteous',sans-serif;
+                 background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;">
+          Yes, create it
+        </button>
+        <button onclick="resetToStart()"
+          style="flex:1;padding:13px;font-size:16px;font-family:'Righteous',sans-serif;
+                 background:#f0ece4;color:var(--text);border:none;border-radius:12px;cursor:pointer;">
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 4: Download card -->
+    <div id="step-card" style="display:none;text-align:center;">
+      <h2 style="margin-bottom:16px;">You're all set! 🎉</h2>
+      <div id="login-card" style="background:#fff8f0;border:2px solid #e8d5b0;border-radius:20px;
+           padding:28px 32px;text-align:center;font-family:'DM Sans',sans-serif;margin-bottom:16px;">
+        <p style="font-size:11px;color:#aaa;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;">Aisle Get It!</p>
+        <p style="font-size:11px;color:#aaa;margin-bottom:12px;">grocerylist.devkeo.com</p>
+        <div style="border-top:1px solid #e8d5b0;margin:12px 0;"></div>
+        <p style="font-size:12px;color:#aaa;margin-bottom:4px;">LIST NAME</p>
+        <p id="card-username" style="font-size:24px;font-weight:700;color:#3a7d44;margin-bottom:12px;"></p>
+        <div id="card-pin-section">
+          <div style="border-top:1px solid #e8d5b0;margin:12px 0;"></div>
+          <p style="font-size:12px;color:#aaa;margin-bottom:4px;">PIN</p>
+          <p id="card-pin" style="font-size:28px;font-weight:700;letter-spacing:8px;color:#333;"></p>
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">Share your list card to shop collaboratively.</p>
+      <button onclick="downloadCard()"
+        style="width:100%;padding:12px;background:var(--green);color:white;border:none;
+               border-radius:12px;font-family:'Righteous',sans-serif;font-size:16px;
+               cursor:pointer;margin-bottom:10px;">
+        Download Card
+      </button>
+      <a id="goto-list" href="/"
+        style="display:block;width:100%;padding:12px;background:#f0ece4;color:var(--text);
+               border-radius:12px;font-family:'Righteous',sans-serif;font-size:16px;
+               text-decoration:none;box-sizing:border-box;">
+        Go to my list →
+      </a>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/login.js"></script>
+{% endblock %}
