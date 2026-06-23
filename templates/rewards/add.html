@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Add Rewards Card{% endblock %}
+{% block body %}
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;">
+  <h1 style="margin-bottom:20px;">💳 Add Rewards Card</h1>
+  <div style="width:100%;max-width:360px;">
+    <form method="post">
+      <input type="text" name="name" placeholder="Card name (e.g. Woolworths)" required
+        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+               border:2px solid var(--border);border-radius:10px;background:var(--cream);
+               color:var(--text);outline:none;margin-bottom:12px;box-sizing:border-box;">
+      <input type="text" name="number" placeholder="Card number (type 0 to clear)" required
+        style="width:100%;padding:12px 14px;font-size:16px;font-family:'DM Sans',sans-serif;
+               border:2px solid var(--border);border-radius:10px;background:var(--cream);
+               color:var(--text);outline:none;margin-bottom:4px;box-sizing:border-box;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+        Spaces and dashes are fine — just type the number on your card or type 0 to clear.
+      </p>
+      {% if error %}
+      <p style="color:var(--red);font-size:14px;margin-top:8px;">{{ error }}</p>
+      {% endif %}
+      <div style="margin-bottom:16px;"></div>
+      <button type="submit"
+        style="width:100%;padding:13px;font-size:17px;font-family:'Righteous',sans-serif;
+               background:var(--green);color:white;border:none;border-radius:12px;cursor:pointer;">
+        Save Card
+      </button>
+    </form>
+  </div>
+  <a href="/shop" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:14px;">Cancel</a>
+</div>
+{% endblock %}
