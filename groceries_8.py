@@ -437,9 +437,17 @@ BASE_HEAD = """
 """
 
 # --- Login / landing ---
+@app.route('/oauth/consent')
+def oauth_consent():
+    auth_id = request.args.get('authorization_id')
+    
+    return redirect(f"/login?authorization_id={auth_id}")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    auth_id = request.args.get("authorization_id")
+    if auth_id:
+        session["oauth_auth_id"] = auth_id
     if request.method == "POST":
         action = request.form.get("action")
         raw_username = request.form.get("username", "").strip()
