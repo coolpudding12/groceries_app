@@ -13,10 +13,6 @@ from cryptography.fernet import Fernet
 import secrets
 import base64
 
-
-AUTH_CODES = {}     # code -> username
-ACCESS_TOKENS = {}  # token -> username
-
 ALEXA_CLIENT_ID = os.environ.get("ALEXA_CLIENT_ID")
 ALEXA_CLIENT_SECRET = os.environ.get("ALEXA_CLIENT_SECRET")
 
@@ -55,6 +51,21 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def store_token(token, username, token_type):
+    supabase.table("oauth_tokens").insert({
+        "token": token,
+        "username": username,
+        "type": token_type
+    }).execute()
+
+def get_username_for_token(token, token_type):
+    result = supabase.table("oauth_tokens").select("username").eq("token", token).eq("type", token_type).execute()
+    if result.data:
+        return result.data[0]["username"]
+    return None
+
+def delete_token(token, token_type):
+    supabase.table("oauth_tokens").delete().eq("token", token).eq("type", token_type).execute()
 
 def generate_barcode_b64(number):
     Code128 = barcode.get_barcode_class('code128')
@@ -460,7 +471,7 @@ def get_oauth_redirect(username):
     if not redirect_uri:
         return None
     code = secrets.token_urlsafe(32)
-    AUTH_CODES[code] = username
+    store_token(code, username, "auth_code")
     return f"{redirect_uri}?state={state}&code={code}"
 
 @app.route('/oauth/token', methods=['POST'])
@@ -475,12 +486,15 @@ def oauth_token():
         return {"error": "invalid_client"}, 401
     if client_id != ALEXA_CLIENT_ID or client_secret != ALEXA_CLIENT_SECRET:
         return {"error": "invalid_client"}, 401
+
     code = request.form.get('code')
-    username = AUTH_CODES.pop(code, None)
+    username = get_username_for_token(code, "auth_code")
     if not username:
         return {"error": "invalid_grant"}, 400
+    delete_token(code, "auth_code")  # single-use
+
     token = secrets.token_urlsafe(32)
-    ACCESS_TOKENS[token] = username
+    store_token(token, username, "access_token")
     return {"access_token": token, "token_type": "Bearer", "expires_in": 3600}, 200
 
 @app.route('/api/add-item', methods=['POST'])
@@ -489,7 +503,7 @@ def api_add_item():
     if not auth_header.startswith('Bearer '):
         return {"error": "unauthorized"}, 401
     token = auth_header[7:]
-    username = ACCESS_TOKENS.get(token)
+    username = get_username_for_token(token, "access_token")
     if not username:
         return {"error": "invalid_token"}, 401
 
