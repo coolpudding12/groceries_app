@@ -446,22 +446,42 @@ BASE_HEAD = """
 """
 
 # --- Login / landing ---
+@app.route('/oauth/consent')
+def oauth_consent():
+    session['redirect_uri'] = request.args.get('redirect_uri')
+    session['state'] = request.args.get('state')
+    session['oauth_auth_id'] = request.args.get('authorization_id')
+    return redirect(url_for('login'))
+
+
+def get_oauth_redirect(username):
+    redirect_uri = session.get('redirect_uri')
+    state = session.get('state')
+    if not redirect_uri:
+        return None
+    code = secrets.token_urlsafe(32)
+    AUTH_CODES[code] = username
+    return f"{redirect_uri}?state={state}&code={code}"
+
 @app.route('/oauth/token', methods=['POST'])
 def oauth_token():
-    client_id = request.form.get('client_id')
-    client_secret = request.form.get('client_secret')
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Basic '):
+        return {"error": "invalid_client"}, 401
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
+        client_id, client_secret = decoded.split(':', 1)
+    except Exception:
+        return {"error": "invalid_client"}, 401
     if client_id != ALEXA_CLIENT_ID or client_secret != ALEXA_CLIENT_SECRET:
         return {"error": "invalid_client"}, 401
-
     code = request.form.get('code')
     username = AUTH_CODES.pop(code, None)
     if not username:
         return {"error": "invalid_grant"}, 400
-
     token = secrets.token_urlsafe(32)
     ACCESS_TOKENS[token] = username
     return {"access_token": token, "token_type": "Bearer", "expires_in": 3600}, 200
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
