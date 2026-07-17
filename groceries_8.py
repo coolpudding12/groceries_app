@@ -10,6 +10,15 @@ import hashlib
 from dotenv import load_dotenv
 load_dotenv()
 from cryptography.fernet import Fernet
+import secrets
+import base64
+
+
+AUTH_CODES = {}     # code -> username
+ACCESS_TOKENS = {}  # token -> username
+
+ALEXA_CLIENT_ID = os.environ.get("ALEXA_CLIENT_ID")
+ALEXA_CLIENT_SECRET = os.environ.get("ALEXA_CLIENT_SECRET")
 
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
 fernet = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
@@ -437,15 +446,22 @@ BASE_HEAD = """
 """
 
 # --- Login / landing ---
-@app.route('/oauth/consent')
-def oauth_consent():
-    # Capture all required OAuth parameters from the Alexa request
-    session['redirect_uri'] = request.args.get('redirect_uri')
-    session['state'] = request.args.get('state')
-    session['oauth_auth_id'] = request.args.get('authorization_id')
-    
-    # Redirect to the login page to authenticate the user
-    return redirect(url_for('login'))
+@app.route('/oauth/token', methods=['POST'])
+def oauth_token():
+    client_id = request.form.get('client_id')
+    client_secret = request.form.get('client_secret')
+    if client_id != ALEXA_CLIENT_ID or client_secret != ALEXA_CLIENT_SECRET:
+        return {"error": "invalid_client"}, 401
+
+    code = request.form.get('code')
+    username = AUTH_CODES.pop(code, None)
+    if not username:
+        return {"error": "invalid_grant"}, 400
+
+    token = secrets.token_urlsafe(32)
+    ACCESS_TOKENS[token] = username
+    return {"access_token": token, "token_type": "Bearer", "expires_in": 3600}, 200
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -456,14 +472,6 @@ def login():
         action = request.form.get("action")
         raw_username = request.form.get("username", "").strip()
         username = safe_username(raw_username)
-
-        def get_oauth_redirect():
-            redirect_uri = session.get('redirect_uri')
-            state = session.get('state')
-            if redirect_uri:
-                # Append a temporary code for testing
-                return f"{redirect_uri}?state={state}&code=test_auth_code"
-            return None
 
         if action == "check_username":
             if not username:
@@ -477,22 +485,20 @@ def login():
                     session.permanent = True
                     session["username"] = username
                     session["display_name"] = raw_username
-                    return {"status": "login_ok"}, 200
+                    oauth_url = get_oauth_redirect(username)
+                    return {"status": "login_ok", "redirect": oauth_url}, 200
             else:
                 return {"status": "new_user"}, 200
-
         elif action == "verify_pin":
             pin = request.form.get("pin", "")
             if check_pin(username, pin):
                 session.permanent = True
                 session["username"] = username
                 session["display_name"] = raw_username
-                oauth_url = get_oauth_redirect()
-                if oauth_url: return redirect(oauth_url)
-                return {"status": "login_ok"}, 200
+                oauth_url = get_oauth_redirect(username)
+                return {"status": "login_ok", "redirect": oauth_url}, 200
             else:
                 return {"status": "wrong_pin"}, 200
-
         elif action == "create_account":
             pin = request.form.get("pin") or None
             ensure_user_exists(username, pin=pin)
@@ -502,12 +508,13 @@ def login():
             pin_display = ""
             if pin:
                 pin_display = " · ".join(pin.split("-"))
-                
+            oauth_url = get_oauth_redirect(username)
             return {
                 "status": "created",
                 "username": raw_username,
                 "pin_display": pin_display,
-                "has_pin": bool(pin)
+                "has_pin": bool(pin),
+                "redirect": oauth_url
             }, 200
 
     return f"""<!DOCTYPE html>
@@ -691,7 +698,7 @@ function checkUsername() {{
         document.getElementById('display-name-pin').textContent = raw;
         showStep('step-pin');
       }} else if (data.status === 'login_ok') {{
-        window.location.href = '/';
+        window.location.href = data.redirect || '/';
       }} else if (data.status === 'new_user') {{
         currentRaw = raw;
         document.getElementById('display-name-new').textContent = raw;
@@ -711,12 +718,14 @@ function verifyPin() {{
     .then(r => r.json())
     .then(data => {{
       if (data.status === 'login_ok') {{
-        window.location.href = '/';
+        window.location.href = data.redirect || '/';
       }} else {{
         document.getElementById('pin-error').style.display = 'block';
       }}
     }});
 }}
+
+let pendingOauthRedirect = null;
 
 function createAccount() {{
   const usePIN = document.getElementById('pin-toggle').checked;
@@ -731,6 +740,7 @@ function createAccount() {{
     .then(r => r.json())
     .then(data => {{
       if (data.status === 'created') {{
+        pendingOauthRedirect = data.redirect || null;
         document.getElementById('card-username').textContent = data.username;
         if (data.has_pin) {{
           document.getElementById('card-pin').textContent = data.pin_display;
@@ -738,6 +748,7 @@ function createAccount() {{
         }} else {{
           document.getElementById('card-pin-section').style.display = 'none';
         }}
+        document.getElementById('goto-list').href = pendingOauthRedirect || '/';
         showStep('step-card');
       }}
     }});
