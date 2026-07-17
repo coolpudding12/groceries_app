@@ -439,7 +439,14 @@ BASE_HEAD = """
 # --- Login / landing ---
 @app.route('/oauth/consent')
 def oauth_consent():
-    auth_id = request.args.get('authorization_id')
+    # Log everything incoming so you can see it in your Render logs
+    print(f"Incoming request args: {request.args}")
+    
+    # Try different common parameter names Alexa might use
+    auth_id = request.args.get('authorization_id') or request.args.get('auth_id') or request.args.get('code')
+    
+    # Store all parameters in the session so they aren't lost
+    session['oauth_params'] = dict(request.args)
     
     return redirect(f"/login?authorization_id={auth_id}")
 
