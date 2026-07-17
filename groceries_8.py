@@ -439,16 +439,13 @@ BASE_HEAD = """
 # --- Login / landing ---
 @app.route('/oauth/consent')
 def oauth_consent():
-    # Log everything incoming so you can see it in your Render logs
-    print(f"Incoming request args: {request.args}")
+    # Capture all required OAuth parameters from the Alexa request
+    session['redirect_uri'] = request.args.get('redirect_uri')
+    session['state'] = request.args.get('state')
+    session['oauth_auth_id'] = request.args.get('authorization_id')
     
-    # Try different common parameter names Alexa might use
-    auth_id = request.args.get('authorization_id') or request.args.get('auth_id') or request.args.get('code')
-    
-    # Store all parameters in the session so they aren't lost
-    session['oauth_params'] = dict(request.args)
-    
-    return redirect(f"/login?authorization_id={auth_id}")
+    # Redirect to the login page to authenticate the user
+    return redirect(url_for('login'))
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -459,6 +456,14 @@ def login():
         action = request.form.get("action")
         raw_username = request.form.get("username", "").strip()
         username = safe_username(raw_username)
+
+        def get_oauth_redirect():
+            redirect_uri = session.get('redirect_uri')
+            state = session.get('state')
+            if redirect_uri:
+                # Append a temporary code for testing
+                return f"{redirect_uri}?state={state}&code=test_auth_code"
+            return None
 
         if action == "check_username":
             if not username:
@@ -482,6 +487,8 @@ def login():
                 session.permanent = True
                 session["username"] = username
                 session["display_name"] = raw_username
+                oauth_url = get_oauth_redirect()
+                if oauth_url: return redirect(oauth_url)
                 return {"status": "login_ok"}, 200
             else:
                 return {"status": "wrong_pin"}, 200
