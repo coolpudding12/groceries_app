@@ -483,6 +483,32 @@ def oauth_token():
     ACCESS_TOKENS[token] = username
     return {"access_token": token, "token_type": "Bearer", "expires_in": 3600}, 200
 
+@app.route('/api/add-item', methods=['POST'])
+def api_add_item():
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return {"error": "unauthorized"}, 401
+    token = auth_header[7:]
+    username = ACCESS_TOKENS.get(token)
+    if not username:
+        return {"error": "invalid_token"}, 401
+
+    data = request.get_json()
+    item = data.get('item')
+    if not item:
+        return {"error": "missing item"}, 400
+
+    result = supabase.table("users").select("items").eq("username", username).execute()
+    if not result.data:
+        return {"error": "user not found"}, 404
+
+    current_items = result.data[0].get("items") or []
+    current_items.append(item)
+
+    supabase.table("users").update({"items": current_items}).eq("username", username).execute()
+
+    return {"status": "ok"}, 200
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     auth_id = request.args.get("authorization_id")
