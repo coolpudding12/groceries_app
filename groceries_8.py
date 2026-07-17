@@ -494,20 +494,19 @@ def api_add_item():
         return {"error": "invalid_token"}, 401
 
     data = request.get_json()
-    item = data.get('item')
-    if not item:
+    item_name = data.get('item', '').strip() if data else ''
+    if not item_name:
         return {"error": "missing item"}, 400
 
-    result = supabase.table("users").select("items").eq("username", username).execute()
-    if not result.data:
-        return {"error": "user not found"}, 404
+    items = load_items(username)
+    if len(items) >= MAX_ITEMS:
+        return {"error": "list full"}, 400
 
-    current_items = result.data[0].get("items") or []
-    current_items.append(item)
+    new_item = {"name": item_name, "photo": None}
+    items.append(new_item)
+    save_items(username, items)
 
-    supabase.table("users").update({"items": current_items}).eq("username", username).execute()
-
-    return {"status": "ok"}, 200
+    return {"status": "ok", "item": new_item}, 200
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
